@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
         printf("Initialized gblimi repository\n");
     } else if (strcmp(cmd, "hash-object") == 0) {
         // Read the file
-        FILE *file = fopen(argv[2], "r");
+        FILE *file = fopen(argv[argc > 3 ? 3 : 2], "r");
         fseek(file, 0, SEEK_END);
         long size = ftell(file);
         fseek(file, 0, SEEK_SET);
@@ -64,16 +64,40 @@ int main(int argc, char **argv) {
         for (int i = 0; i < 20; i++)
             sprintf(hash_str + i * 2, "%02x", hash[i]);
 
-        // Compress the blob
-        unsigned long compressed_size = compressBound(ucompSize);
-        char *compressed = malloc(compressed_size);
-        compress((Bytef *)compressed, &compressed_size, (Bytef *)blob,
-                 ucompSize);
+        if (argc > 3 && !strcmp(argv[3], "-w")) {
+            // Compress the blob
+            unsigned long compressed_size = compressBound(ucompSize);
+            char *compressed = malloc(compressed_size);
+            compress((Bytef *)compressed, &compressed_size, (Bytef *)blob,
+                     ucompSize);
+
+            // Create the object path
+            char dir[3] = {hash_str[0], hash_str[1], '\0'};
+            char *object_path =
+                malloc(16 + 2 + 1 + strlen(hash_str + 2) * sizeof(char));
+
+            snprintf(object_path,
+                     strlen(".gblimi/objects/") + strlen(dir) + 1 +
+                         strlen(hash_str + 2),
+                     ".gblimi/objects/%s/%s", dir, hash_str + 2);
+
+            object_path[18] = '\0';
+            mkdir(object_path, 0777);
+
+            // Write the object
+            object_path[18] = '/';
+            FILE *object = fopen(object_path, "w");
+            fwrite(compressed, 1, compressed_size, object);
+
+            fclose(object);
+            free(compressed);
+            free(object_path);
+        }
 
         printf("%s\n", hash_str);
-        char dir[3] = {hash_str[0], hash_str[1], '\0'};
-        printf("%s\n", dir);
 
+        free(blob);
+        free(hash_str);
     } else {
         fprintf(stderr, "Unknown command: %s\n", cmd);
         return 1;
