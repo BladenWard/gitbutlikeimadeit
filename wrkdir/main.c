@@ -11,7 +11,7 @@
 // - commit
 // - checkout
 // - check-ignore
-// - hash-object
+// - ~hash-object~
 // - log
 // - ls-files
 // - ls-tree
@@ -64,40 +64,76 @@ int main(int argc, char **argv) {
         for (int i = 0; i < 20; i++)
             sprintf(hash_str + i * 2, "%02x", hash[i]);
 
-        if (argc > 3 && !strcmp(argv[3], "-w")) {
-            // Compress the blob
-            unsigned long compressed_size = compressBound(ucompSize);
-            char *compressed = malloc(compressed_size);
-            compress((Bytef *)compressed, &compressed_size, (Bytef *)blob,
-                     ucompSize);
+        if (argc > 3) {
+            if (strcmp(argv[2], "-w") == 0) {
+                // Compress the blob
+                unsigned long compressed_size = compressBound(ucompSize);
+                char *compressed = malloc(compressed_size);
+                compress((Bytef *)compressed, &compressed_size, (Bytef *)blob,
+                         ucompSize);
 
-            // Create the object path
-            char dir[3] = {hash_str[0], hash_str[1], '\0'};
-            char *object_path =
-                malloc(16 + 2 + 1 + strlen(hash_str + 2) * sizeof(char));
+                // Create the object path
+                char dir[3] = {hash_str[0], hash_str[1], '\0'};
+                char *object_path =
+                    malloc(16 + 2 + 1 + strlen(hash_str + 2) * sizeof(char));
 
-            snprintf(object_path,
-                     strlen(".gblimi/objects/") + strlen(dir) + 1 +
-                         strlen(hash_str + 2),
-                     ".gblimi/objects/%s/%s", dir, hash_str + 2);
+                snprintf(object_path,
+                         strlen(".gblimi/objects/") + strlen(dir) + 1 +
+                             strlen(hash_str + 2) + 1,
+                         ".gblimi/objects/%s/%s", dir, hash_str + 2);
 
-            object_path[18] = '\0';
-            mkdir(object_path, 0777);
+                object_path[18] = '\0';
+                mkdir(object_path, 0777);
 
-            // Write the object
-            object_path[18] = '/';
-            FILE *object = fopen(object_path, "w");
-            fwrite(compressed, 1, compressed_size, object);
+                // Write the object
+                object_path[18] = '/';
+                FILE *object = fopen(object_path, "w");
+                fwrite(compressed, 1, compressed_size, object);
+                printf("Created object path: %s\n", object_path);
 
-            fclose(object);
-            free(compressed);
-            free(object_path);
+                fclose(object);
+                free(compressed);
+                free(object_path);
+            }
         }
 
         printf("%s\n", hash_str);
 
         free(blob);
         free(hash_str);
+    } else if (strcmp(cmd, "cat-file") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: %s cat-file <hash>\n", argv[0]);
+            return 1;
+        }
+
+        // Make the object path
+        char *object_path =
+            malloc(strlen(".gblimi/objects/") + strlen(argv[2]) + 2);
+
+        char dir[3] = {argv[2][0], argv[2][1], '\0'};
+        snprintf(object_path, strlen(".gblimi/objects/") + strlen(argv[2]) + 2,
+                 ".gblimi/objects/%s/%s", dir, argv[2] + 2);
+
+        // Read the object
+        FILE *object = fopen(object_path, "r");
+        fseek(object, 0, SEEK_END);
+        long size = ftell(object);
+        fseek(object, 0, SEEK_SET);
+        char *data = malloc(size);
+        if (data)
+            fread(data, 1, size, object);
+        fclose(object);
+
+        // Decompress the object
+        char *blob = malloc(size);
+        uncompress((Bytef *)blob, (uLongf *)&size, (Bytef *)data, size);
+        // Print the blob
+        printf("%s\n", blob + 10);
+
+        free(object_path);
+        free(blob);
+        free(data);
     } else {
         fprintf(stderr, "Unknown command: %s\n", cmd);
         return 1;
