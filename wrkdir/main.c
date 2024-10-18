@@ -21,6 +21,38 @@
 // - status
 // - tag
 
+struct git_index_header {
+    char signature[4]; // Should be "DIRC"
+    uint32_t version;  // Version number (usually 2)
+    uint32_t entries;  // Number of entries
+};
+
+// Git index entry structure
+struct git_index_entry {
+    uint32_t ctime_sec;
+    uint32_t ctime_nsec;
+    uint32_t mtime_sec;
+    uint32_t mtime_nsec;
+    uint32_t dev;
+    uint32_t ino;
+    uint32_t mode;
+    uint32_t uid;
+    uint32_t gid;
+    uint32_t size;
+    unsigned char sha1[20];
+    uint16_t flags;
+    char path[1024];
+};
+
+void write_uint32(FILE *fp, uint32_t value) {
+    unsigned char buf[4];
+    buf[0] = (value >> 24) & 0xFF;
+    buf[1] = (value >> 16) & 0xFF;
+    buf[2] = (value >> 8) & 0xFF;
+    buf[3] = value & 0xFF;
+    fwrite(buf, 1, 4, fp);
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
@@ -101,6 +133,78 @@ int main(int argc, char **argv) {
 
         free(blob);
         free(hash_str);
+        free(data);
+    } else if (strcmp(cmd, "update-index") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: %s update-index <path>\n", argv[0]);
+            return 1;
+        }
+        FILE *index_fp;
+        struct git_index_header header;
+        struct git_index_entry entry;
+        struct stat file_stat;
+
+        // Open or create the index file
+        index_fp = fopen(".git/index", "wb");
+        if (!index_fp) {
+            perror("Failed to open index file");
+            return 1;
+        }
+
+        // Prepare header
+        memcpy(header.signature, "DIRC", 4);
+        header.version = 2;
+        header.entries = 1;
+
+        fwrite(header.signature, 1, 4, index_fp);
+        write_uint32(index_fp, header.version);
+        write_uint32(index_fp, header.entries);
+
+        // Get file stats
+        if (stat(argv[2], &file_stat) != 0) {
+            perror("Failed to get file stats");
+            fclose(index_fp);
+            return 1;
+        }
+
+        // Prepare entry
+        memset(&entry, 0, sizeof(entry));
+        entry.ctime_sec = (uint32_t)file_stat.st_ctime;
+        entry.ctime_nsec = 0;
+        entry.mtime_sec = (uint32_t)file_stat.st_mtime;
+        entry.mtime_nsec = 0;
+        entry.dev = (uint32_t)file_stat.st_dev;
+        entry.ino = (uint32_t)file_stat.st_ino;
+        entry.mode = (uint32_t)file_stat.st_mode;
+        entry.uid = (uint32_t)file_stat.st_uid;
+        entry.gid = (uint32_t)file_stat.st_gid;
+        entry.size = (uint32_t)file_stat.st_size;
+
+    } else if (strcmp(cmd, "ls-files") == 0) {
+        // Read the index
+        FILE *index = fopen(".gblimi/index", "r");
+        fseek(index, 0, SEEK_END);
+        long size = ftell(index);
+        fseek(index, 0, SEEK_SET);
+        char *data = malloc(size);
+        if (data)
+            fread(data, 1, size, index);
+        fclose(index);
+
+        // Parse the index
+        char *ptr = data;
+        while (ptr < data + size) {
+            char *hash = ptr;
+            ptr += 40;
+            char *mode = ptr;
+            ptr += 10;
+            char *path = ptr;
+            ptr += strlen(path) + 1;
+
+            printf("%s %s\n", hash, path);
+        }
+
+        free(data);
     } else if (strcmp(cmd, "cat-file") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: %s cat-file <hash>\n", argv[0]);
