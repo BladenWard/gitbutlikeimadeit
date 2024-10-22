@@ -60,11 +60,9 @@ void read_index(struct git_index_header *header,
         fclose(fp);
         return;
     }
+    // Read rest of header
     read_uint32(fp, &header->version);
     read_uint32(fp, &header->entries);
-
-    printf("Index version: %u\n", header->version);
-    printf("Number of entries: %u\n\n", header->entries);
 
     // Read entries
     *entries_size = header->entries;
@@ -90,19 +88,6 @@ void read_index(struct git_index_header *header,
         path[path_len] = '\0';
         strncpy((*entries)[i].path, path, BUFSIZ - 1);
     }
-
-    printf("%u\n", entries[0]->ctime_sec);
-    printf("%u\n", entries[0]->ctime_nsec);
-    printf("%u\n", entries[0]->mtime_sec);
-    printf("%u\n", entries[0]->mtime_nsec);
-    printf("%u\n", entries[0]->dev);
-    printf("%u\n", entries[0]->ino);
-    printf("%u\n", entries[0]->mode);
-    printf("%u\n", entries[0]->uid);
-    printf("%u\n", entries[0]->gid);
-    printf("%u\n", entries[0]->size);
-    printf("%u\n", entries[0]->flags);
-    printf("%s\n", entries[0]->path);
 
     fclose(fp);
 }
@@ -131,6 +116,89 @@ void write_index_entry(FILE *fp, struct git_index_entry *entry) {
     fwrite(&entry->flags, 1, 2, fp);
 }
 
+int init() {
+    // Create the nessecary dirs
+    mkdir(".gblimi", 0777);
+    mkdir(".gblimi/objects", 0777);
+    mkdir(".gblimi/refs", 0777);
+
+    // Create the HEAD file
+    FILE *head = fopen(".gblimi/HEAD", "w");
+    fprintf(head, "ref: refs/heads/master\n");
+    fclose(head);
+
+    printf("Initialized gblimi repository\n");
+
+    return 0;
+}
+
+int hash_object(int argc, char **argv) {
+    // Read the file
+    FILE *file = fopen(argv[argc > 3 ? 3 : 2], "r");
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    char *data = malloc(size);
+    if (data)
+        fread(data, 1, size, file);
+    fclose(file);
+
+    // Make the blob
+    unsigned long ucompSize = size + 10;
+    char *blob = malloc(ucompSize);
+    sprintf(blob, "blob %ld\\0", size);
+    memcpy(blob + 10, data, size);
+
+    // Hash the blob
+    unsigned char hash[20];
+    SHA1((unsigned char *)blob, ucompSize, hash);
+    char *hash_str = malloc(41);
+    for (int i = 0; i < 20; i++)
+        sprintf(hash_str + i * 2, "%02x", hash[i]);
+    // char *hash_str = hash_file(blob, ucompSize);
+
+    if (argc > 3) {
+        if (strcmp(argv[2], "-w") == 0) {
+            // Compress the blob
+            unsigned long compressed_size = compressBound(ucompSize);
+            char *compressed = malloc(compressed_size);
+            compress((Bytef *)compressed, &compressed_size, (Bytef *)blob,
+                     ucompSize);
+
+            // Create the object path
+            char dir[3] = {hash_str[0], hash_str[1], '\0'};
+            char *object_path =
+                malloc(16 + 2 + 1 + strlen(hash_str + 2) * sizeof(char));
+
+            snprintf(object_path,
+                     strlen(".gblimi/objects/") + strlen(dir) + 1 +
+                         strlen(hash_str + 2) + 1,
+                     ".gblimi/objects/%s/%s", dir, hash_str + 2);
+
+            object_path[18] = '\0';
+            mkdir(object_path, 0777);
+
+            // Write the object
+            object_path[18] = '/';
+            FILE *object = fopen(object_path, "w");
+            fwrite(compressed, 1, compressed_size, object);
+            printf("Created object path: %s\n", object_path);
+
+            fclose(object);
+            free(compressed);
+            free(object_path);
+        }
+    }
+
+    printf("%s\n", hash_str);
+
+    free(blob);
+    free(hash_str);
+    free(data);
+
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
@@ -139,86 +207,30 @@ int main(int argc, char **argv) {
 
     char *cmd = argv[1];
     if (strcmp(cmd, "init") == 0) {
-        // Create the nessecary dirs
-        mkdir(".gblimi", 0777);
-        mkdir(".gblimi/objects", 0777);
-        mkdir(".gblimi/refs", 0777);
-
-        // Create the HEAD file
-        FILE *head = fopen(".gblimi/HEAD", "w");
-        fprintf(head, "ref: refs/heads/master\n");
-        fclose(head);
-
-        printf("Initialized gblimi repository\n");
+        return init();
     } else if (strcmp(cmd, "read-index") == 0) {
         struct git_index_header header;
         struct git_index_entry *entries;
         size_t entries_size;
         read_index(&header, &entries, &entries_size);
-    } else if (strcmp(cmd, "hash-object") == 0) {
-        // Read the file
-        FILE *file = fopen(argv[argc > 3 ? 3 : 2], "r");
-        fseek(file, 0, SEEK_END);
-        long size = ftell(file);
-        fseek(file, 0, SEEK_SET);
-        char *data = malloc(size);
-        if (data)
-            fread(data, 1, size, file);
-        fclose(file);
 
-        // Make the blob
-        unsigned long ucompSize = size + 10;
-        char *blob = malloc(ucompSize);
-        sprintf(blob, "blob %ld\\0", size);
-        memcpy(blob + 10, data, size);
+        printf("Index version: %u\n", header.version);
+        printf("Number of entries: %u\n\n", header.entries);
 
-        // Hash the blob
-        unsigned char hash[20];
-        SHA1((unsigned char *)blob, ucompSize, hash);
-        char *hash_str = malloc(41);
-        for (int i = 0; i < 20; i++)
-            sprintf(hash_str + i * 2, "%02x", hash[i]);
-        // char *hash_str = hash_file(blob, ucompSize);
-
-        if (argc > 3) {
-            if (strcmp(argv[2], "-w") == 0) {
-                // Compress the blob
-                unsigned long compressed_size = compressBound(ucompSize);
-                char *compressed = malloc(compressed_size);
-                compress((Bytef *)compressed, &compressed_size, (Bytef *)blob,
-                         ucompSize);
-
-                // Create the object path
-                char dir[3] = {hash_str[0], hash_str[1], '\0'};
-                char *object_path =
-                    malloc(16 + 2 + 1 + strlen(hash_str + 2) * sizeof(char));
-
-                snprintf(object_path,
-                         strlen(".gblimi/objects/") + strlen(dir) + 1 +
-                             strlen(hash_str + 2) + 1,
-                         ".gblimi/objects/%s/%s", dir, hash_str + 2);
-
-                object_path[18] = '\0';
-                mkdir(object_path, 0777);
-
-                // Write the object
-                object_path[18] = '/';
-                FILE *object = fopen(object_path, "w");
-                fwrite(compressed, 1, compressed_size, object);
-                printf("Created object path: %s\n", object_path);
-
-                fclose(object);
-                free(compressed);
-                free(object_path);
-            }
+        for (size_t i = 0; i < entries_size; i++) {
+            printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x "
+                   "gid: %x "
+                   "size: %x hash: ",
+                   entries[i].ctime_sec, entries[i].mtime_sec, entries[i].dev,
+                   entries[i].ino, entries[i].mode, entries[i].uid,
+                   entries[i].gid, entries[i].size);
+            for (int j = 0; j < 20; j++)
+                printf("%02x", entries[i].sha1[j]);
+            printf("\n");
         }
-
-        printf("%s\n", hash_str);
-
-        free(blob);
-        free(hash_str);
-        free(data);
+    } else if (strcmp(cmd, "hash-object") == 0) {
         // TODO: staging area
+        return hash_object(argc, argv);
     } else if (strcmp(cmd, "update-index") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: %s update-index <path>\n", argv[0]);
