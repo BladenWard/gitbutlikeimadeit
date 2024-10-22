@@ -5,6 +5,8 @@
 #include <sys/stat.h>
 #include <zlib.h>
 
+#include "index.h"
+
 // TODO: Commands to add
 // - cat-file
 // - add
@@ -23,28 +25,87 @@
 
 char *hash_file(char *data, long size);
 
-struct git_index_header {
-    char signature[4]; // Should be "DIRC"
-    uint32_t version;  // Version number (usually 2)
-    uint32_t entries;  // Number of entries
-};
+void read_uint32(FILE *fp, uint32_t *value) {
+    unsigned char buf[4];
+    fread(buf, 1, 4, fp);
+    *value = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+}
 
-// Git index entry structure
-struct git_index_entry {
-    uint64_t ctime_sec;
-    uint64_t ctime_nsec;
-    uint64_t mtime_sec;
-    uint64_t mtime_nsec;
-    uint32_t dev;
-    uint32_t ino;
-    uint32_t mode;
-    uint32_t uid;
-    uint32_t gid;
-    uint32_t size;
-    unsigned char sha1[20];
-    uint16_t flags;
-    char path[1024];
-};
+void read_uint16(FILE *fp, uint16_t *value) {
+    unsigned char buf[2];
+    fread(buf, 1, 2, fp);
+    *value = (buf[0] << 8) | buf[1];
+}
+
+// Function to read and parse the index file
+void read_index(struct git_index_header *header,
+                struct git_index_entry **entries, size_t *entries_size) {
+    char index_path[256];
+    snprintf(index_path, 256, ".gblimi/index");
+    FILE *fp = fopen(index_path, "rb");
+    if (!fp) {
+        printf("Error opening index file\n");
+        return;
+    }
+
+    // Read header
+    if (fread(&header->signature, 4, 1, fp) != 1) {
+        printf("Error reading header\n");
+        fclose(fp);
+        return;
+    }
+    // Verify signature
+    if (memcmp(header->signature, "DIRC", 4) != 0) {
+        printf("Invalid index file signature\n");
+        fclose(fp);
+        return;
+    }
+    read_uint32(fp, &header->version);
+    read_uint32(fp, &header->entries);
+
+    printf("Index version: %u\n", header->version);
+    printf("Number of entries: %u\n\n", header->entries);
+
+    // Read entries
+    *entries_size = header->entries;
+    *entries = malloc(*entries_size);
+    for (size_t i = 0; i < *entries_size; i++) {
+        read_uint32(fp, &(*entries)[i].ctime_sec);
+        read_uint32(fp, &(*entries)[i].ctime_nsec);
+        read_uint32(fp, &(*entries)[i].mtime_sec);
+        read_uint32(fp, &(*entries)[i].mtime_nsec);
+        read_uint32(fp, &(*entries)[i].dev);
+        read_uint32(fp, &(*entries)[i].ino);
+        read_uint32(fp, &(*entries)[i].mode);
+        read_uint32(fp, &(*entries)[i].uid);
+        read_uint32(fp, &(*entries)[i].gid);
+        read_uint32(fp, &(*entries)[i].size);
+        fread((*entries)[i].sha1, 1, 20, fp);
+        read_uint16(fp, &(*entries)[i].flags);
+        char path[4096]; // Max path length
+        int c, path_len = 0;
+        while ((c = fgetc(fp)) != '\0' && c != EOF && path_len < 4095) {
+            path[path_len++] = c;
+        }
+        path[path_len] = '\0';
+        strncpy((*entries)[i].path, path, BUFSIZ - 1);
+    }
+
+    printf("%u\n", entries[0]->ctime_sec);
+    printf("%u\n", entries[0]->ctime_nsec);
+    printf("%u\n", entries[0]->mtime_sec);
+    printf("%u\n", entries[0]->mtime_nsec);
+    printf("%u\n", entries[0]->dev);
+    printf("%u\n", entries[0]->ino);
+    printf("%u\n", entries[0]->mode);
+    printf("%u\n", entries[0]->uid);
+    printf("%u\n", entries[0]->gid);
+    printf("%u\n", entries[0]->size);
+    printf("%u\n", entries[0]->flags);
+    printf("%s\n", entries[0]->path);
+
+    fclose(fp);
+}
 
 void write_uint32(FILE *fp, uint32_t value) {
     unsigned char buf[4];
@@ -54,19 +115,6 @@ void write_uint32(FILE *fp, uint32_t value) {
     buf[3] = value & 0xFF;
     fwrite(buf, 1, 4, fp);
 }
-//
-// void write_uint64(FILE *fp, uint64_t value) {
-//     unsigned char buf[8];
-//     buf[0] = (value >> 56) & 0xFF;
-//     buf[1] = (value >> 48) & 0xFF;
-//     buf[2] = (value >> 40) & 0xFF;
-//     buf[3] = (value >> 32) & 0xFF;
-//     buf[4] = (value >> 24) & 0xFF;
-//     buf[5] = (value >> 16) & 0xFF;
-//     buf[6] = (value >> 8) & 0xFF;
-//     buf[7] = value & 0xFF;
-//     fwrite(buf, 1, 8, fp);
-// }
 
 void write_index_entry(FILE *fp, struct git_index_entry *entry) {
     write_uint32(fp, entry->ctime_sec);
@@ -102,6 +150,11 @@ int main(int argc, char **argv) {
         fclose(head);
 
         printf("Initialized gblimi repository\n");
+    } else if (strcmp(cmd, "read-index") == 0) {
+        struct git_index_header header;
+        struct git_index_entry *entries;
+        size_t entries_size;
+        read_index(&header, &entries, &entries_size);
     } else if (strcmp(cmd, "hash-object") == 0) {
         // Read the file
         FILE *file = fopen(argv[argc > 3 ? 3 : 2], "r");
@@ -238,14 +291,13 @@ int main(int argc, char **argv) {
         entry.flags = strlen(argv[2]);
         strncpy(entry.path, argv[2], BUFSIZ - 1);
 
-        printf(
-            "Decimal: ctime: %llu mtime: %llu dev: %d ino: %d mode: %d uid: %d "
-            "gid: %d "
-            "size: %d hash: %s\n",
-            entry.ctime_sec, entry.mtime_sec, entry.dev, entry.ino, entry.mode,
-            entry.uid, entry.gid, entry.size, entry.sha1);
+        printf("Decimal: ctime: %u mtime: %u dev: %d ino: %d mode: %d uid: %d "
+               "gid: %d "
+               "size: %d hash: %s\n",
+               entry.ctime_sec, entry.mtime_sec, entry.dev, entry.ino,
+               entry.mode, entry.uid, entry.gid, entry.size, entry.sha1);
 
-        printf("Hex: ctime: %llx mtime: %llx dev: %x ino: %x mode: %x uid: %x "
+        printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x "
                "gid: %x "
                "size: %x hash: ",
                entry.ctime_sec, entry.mtime_sec, entry.dev, entry.ino,
@@ -359,7 +411,6 @@ int main(int argc, char **argv) {
 }
 
 char *hash_file(char *data, long size) {
-    // Hash the file
     unsigned char hash[20];
     SHA1((unsigned char *)data, size, hash);
     char *hash_str = malloc(41);
@@ -367,12 +418,3 @@ char *hash_file(char *data, long size) {
         sprintf(hash_str + i * 2, "%02x", hash[i]);
     return hash_str;
 }
-
-// char *sha1(char *filepath, long size) {
-//     unsigned char hash[20];
-//     SHA1((unsigned char *)data, size, hash);
-//     char *hash_str = malloc(41);
-//     for (int i = 0; i < 20; i++)
-//         sprintf(hash_str + i * 2, "%02x", hash[i]);
-//     return hash_str;
-// }
