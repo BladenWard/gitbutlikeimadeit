@@ -5,6 +5,8 @@
 #include <sys/stat.h>
 #include <zlib.h>
 
+#include "blob.h"
+#include "hash-object.h"
 #include "index.h"
 
 // TODO: Commands to add
@@ -22,8 +24,6 @@
 // - show-ref
 // - status
 // - tag
-
-char *hash_file(char *data, long size);
 
 void read_uint32(FILE *fp, uint32_t *value) {
     unsigned char buf[4];
@@ -92,19 +92,6 @@ void read_index(struct git_index_header *header,
             ;
     }
 
-    for (int i = 0; i < header->entries; i++) {
-        printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x "
-               "gid: %x "
-               "size: %x path: %s hash: ",
-               (*entries)[i].ctime_sec, (*entries)[i].mtime_sec,
-               (*entries)[i].dev, (*entries)[i].ino, (*entries)[i].mode,
-               (*entries)[i].uid, (*entries)[i].gid, (*entries)[i].size,
-               (*entries)[i].path);
-        for (int j = 0; j < 20; j++)
-            printf("%02x", (*entries)[i].sha1[j]);
-        printf("\n");
-    }
-
     fclose(fp);
 }
 
@@ -147,189 +134,6 @@ int init() {
 
     return 0;
 }
-
-int hash_object(int argc, char **argv) {
-    // Read the file
-    FILE *file = fopen(argv[argc > 3 ? 3 : 2], "r");
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    char *data = malloc(size);
-    if (data)
-        fread(data, 1, size, file);
-    fclose(file);
-
-    // Make the blob
-    unsigned long ucompSize = size + 10;
-    char *blob = malloc(ucompSize);
-    sprintf(blob, "blob %ld\\0", size);
-    memcpy(blob + 10, data, size);
-
-    // Hash the blob
-    unsigned char hash[20];
-    SHA1((unsigned char *)blob, ucompSize, hash);
-    char *hash_str = malloc(41);
-    for (int i = 0; i < 20; i++)
-        sprintf(hash_str + i * 2, "%02x", hash[i]);
-    // char *hash_str = hash_file(blob, ucompSize);
-
-    if (argc > 3) {
-        if (strcmp(argv[2], "-w") == 0) {
-            // Compress the blob
-            unsigned long compressed_size = compressBound(ucompSize);
-            char *compressed = malloc(compressed_size);
-            compress((Bytef *)compressed, &compressed_size, (Bytef *)blob,
-                     ucompSize);
-
-            // Create the object path
-            char dir[3] = {hash_str[0], hash_str[1], '\0'};
-            char *object_path =
-                malloc(16 + 2 + 1 + strlen(hash_str + 2) * sizeof(char));
-
-            snprintf(object_path,
-                     strlen(".gblimi/objects/") + strlen(dir) + 1 +
-                         strlen(hash_str + 2) + 1,
-                     ".gblimi/objects/%s/%s", dir, hash_str + 2);
-
-            object_path[18] = '\0';
-            mkdir(object_path, 0777);
-
-            // Write the object
-            object_path[18] = '/';
-            FILE *object = fopen(object_path, "w");
-            fwrite(compressed, 1, compressed_size, object);
-            printf("Created object path: %s\n", object_path);
-
-            fclose(object);
-            free(compressed);
-            free(object_path);
-        }
-    }
-
-    printf("%s\n", hash_str);
-
-    free(blob);
-    free(hash_str);
-    free(data);
-
-    return 0;
-}
-
-// void create_entry(FILE *index_fp, char *path, struct git_index_entry entry,
-//                   struct stat file_stat) {
-//     entry.ctime_sec = (uint32_t)file_stat.st_ctime;
-//     entry.ctime_nsec = (uint32_t)file_stat.st_ctimespec.tv_nsec;
-//     entry.mtime_sec = (uint32_t)file_stat.st_mtime;
-//     entry.mtime_nsec = (uint32_t)file_stat.st_mtimespec.tv_nsec;
-//     entry.dev = (uint32_t)file_stat.st_dev;
-//     entry.ino = (uint32_t)file_stat.st_ino;
-//     entry.mode = (uint32_t)file_stat.st_mode;
-//     entry.uid = (uint32_t)file_stat.st_uid;
-//     entry.gid = (uint32_t)file_stat.st_gid;
-//     entry.size = (uint32_t)file_stat.st_size;
-//
-//     FILE *file = fopen(path, "r");
-//     fseek(file, 0, SEEK_END);
-//     long size = ftell(file);
-//     fseek(file, 0, SEEK_SET);
-//     char *data = malloc(size);
-//     if (data)
-//         fread(data, 1, size, file);
-//     fclose(file);
-//
-//     // Create the blob
-//     unsigned long ucompSize = size + 10;
-//     char *blob = malloc(ucompSize);
-//     sprintf(blob, "blob %ld\\0", size);
-//     memcpy(blob + 10, data, size);
-//     free(data);
-//
-//     // Hash the file
-//     unsigned char hash[20];
-//     SHA1((unsigned char *)blob, ucompSize, hash);
-//     free(blob);
-//     memcpy(entry.sha1, hash, 20);
-//
-//     // Set flags (path length etc.)
-//     entry.flags = strlen(path);
-//     strncpy(entry.path, path, BUFSIZ - 1);
-//
-//     index_fp = fopen(".gblimi/index", "wb+");
-//     if (!index_fp) {
-//         perror("Failed to open index file");
-//         return 1;
-//     }
-//     printf("index signature: %s\n", header.signature);
-//
-//     // 12 byte header
-//     fwrite(header.signature, 1, 4, index_fp);
-//     write_uint32(index_fp, header.version);
-//     write_uint32(index_fp, header.entries);
-//
-//     // Write entries
-//     for (size_t i = 0; i < header.entries; i++) {
-//         write_uint32(index_fp, entries[i].ctime_sec);
-//         write_uint32(index_fp, entries[i].ctime_nsec);
-//         write_uint32(index_fp, entries[i].mtime_sec);
-//         write_uint32(index_fp, entries[i].mtime_nsec);
-//         write_uint32(index_fp, entries[i].dev);
-//         write_uint32(index_fp, entries[i].ino);
-//         write_uint32(index_fp, entries[i].mode);
-//         write_uint32(index_fp, entries[i].uid);
-//         write_uint32(index_fp, entries[i].gid);
-//         write_uint32(index_fp, entries[i].size);
-//         fwrite(entries[i].sha1, 1, 20, index_fp);
-//         fwrite(&entries[i].flags, 1, 2, index_fp);
-//         fwrite(entries[i].path, 1, strlen(entries[0].path), index_fp);
-//         printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x
-//                "
-//                "gid: %x "
-//                "size: %x path: %s hash: ",
-//                entries[i].ctime_sec, entries[i].mtime_sec, entries[i].dev,
-//                entries[i].ino, entries[i].mode, entries[i].uid,
-//                entries[i].gid, entries[i].size, entries[i].path);
-//         for (int j = 0; j < 20; j++)
-//             printf("%02x", entries[i].sha1[j]);
-//         printf("\n");
-//
-//         // Add padding to ensure entry length is a multiple of 8
-//         int padding = 8 - ((62 + entries[i].flags) % 8);
-//         if (padding < 8) {
-//             char null_bytes[8] = {0};
-//             fwrite(null_bytes, 1, padding, index_fp);
-//         }
-//     }
-//
-//     // Add padding to ensure entry length is a multiple of 8
-//     int padding = 8 - ((62 + entries[header.entries - 1].flags) % 8);
-//     if (padding < 8) {
-//         char null_bytes[8] = {0};
-//         fwrite(null_bytes, 1, padding, index_fp);
-//     }
-//
-//     fseek(index_fp, 0, SEEK_END);
-//     long index_size = ftell(index_fp);
-//     fseek(index_fp, 0, SEEK_SET);
-//     char *index = malloc(index_size);
-//     if (index)
-//         fread(index, 1, index_size, index_fp);
-//
-//     // Find checksum
-//     unsigned char checksum[20];
-//     SHA1((unsigned char *)index, index_size, checksum);
-//     printf("checksum: ");
-//     for (int i = 0; i < 20; i++)
-//         printf("%02x", checksum[i]);
-//     // Write checksum
-//     fwrite(checksum, 1, 20, index_fp);
-//
-//     free(index);
-//     free(entries);
-// }
-
-#define FOUND 0x2
-#define MODIFIED 0x4
-
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
@@ -339,55 +143,14 @@ int main(int argc, char **argv) {
     char *cmd = argv[1];
     if (strcmp(cmd, "init") == 0) {
         return init();
-    } else if (strcmp(cmd, "read-index") == 0) {
-        // struct git_index_header header;
-        // struct git_index_entry *entries;
-        // size_t entries_size;
-        // read_index(&header, &entries, &entries_size);
-        //
-        // printf("Index version: %u\n", header.version);
-        // printf("Number of entries: %u\n\n", header.entries);
-        //
-        // for (size_t i = 0; i < entries_size; i++) {
-        //     printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x
-        //     "
-        //            "gid: %x "
-        //            "size: %x hash: ",
-        //            entries[i].ctime_sec, entries[i].mtime_sec,
-        //            entries[i].dev, entries[i].ino, entries[i].mode,
-        //            entries[i].uid, entries[i].gid, entries[i].size);
-        //     for (int j = 0; j < 20; j++)
-        //         printf("%02x", entries[i].sha1[j]);
-        //     printf("\n");
-        // }
     } else if (strcmp(cmd, "hash-object") == 0) {
-        // TODO: staging area
         return hash_object(argc, argv);
-    } else if (strcmp(cmd, "read") == 0) {
-        printf("Reading index\n");
-        struct git_index_header header;
-        struct git_index_entry *entries;
-        read_index(&header, &entries);
-        // printf("Index version: %u\n", header.version);
-        // printf("Number of entries: %u\n\n", header.entries);
-        // for (size_t i = 0; i < header.entries; i++) {
-        //     printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x
-        //     "
-        //            "gid: %x "
-        //            "size: %x path: %s hash: ",
-        //            entries[i].ctime_sec, entries[i].mtime_sec,
-        //            entries[i].dev, entries[i].ino, entries[i].mode,
-        //            entries[i].uid, entries[i].gid, entries[i].size,
-        //            entries[i].path);
-        //     for (int j = 0; j < 20; j++)
-        //         printf("%02x", entries[i].sha1[j]);
-        //     printf("\n");
-        // }
     } else if (strcmp(cmd, "update-index") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: %s update-index <path>\n", argv[0]);
             return 1;
         }
+
         FILE *index_fp;
         struct git_index_header header;
         struct git_index_entry *entries;
@@ -405,10 +168,8 @@ int main(int argc, char **argv) {
         for (int i = 0; i < header.entries; i++) {
             if (strcmp(entries[i].path, argv[2]) == 0) {
                 found = i + 1;
-                printf("Found: %d\n", found);
                 if (entries[i].mtime_sec < file_stat.st_mtime)
                     modified = 1;
-                printf("Modified: %d\n", modified);
             }
         }
 
@@ -429,26 +190,8 @@ int main(int argc, char **argv) {
             entries[found].gid = (uint32_t)file_stat.st_gid;
             entries[found].size = (uint32_t)file_stat.st_size;
 
-            FILE *file = fopen(argv[2], "r");
-            fseek(file, 0, SEEK_END);
-            long size = ftell(file);
-            fseek(file, 0, SEEK_SET);
-            char *data = malloc(size);
-            if (data)
-                fread(data, 1, size, file);
-            fclose(file);
-
-            // Create the blob
-            unsigned long ucompSize = size + 10;
-            char *blob = malloc(ucompSize);
-            sprintf(blob, "blob %ld\\0", size);
-            memcpy(blob + 10, data, size);
-            free(data);
-
-            // Hash the file
-            unsigned char hash[20];
-            SHA1((unsigned char *)blob, ucompSize, hash);
-            free(blob);
+            long size;
+            unsigned char *hash = blob_and_hash_file(argv[2], &size);
             memcpy(entries[found].sha1, hash, 20);
 
             // Set flags (path length etc.)
@@ -470,7 +213,6 @@ int main(int argc, char **argv) {
             write_uint32(index_fp, header.entries);
 
             // Write entries
-            printf("Writing entries %d\n", header.entries);
             for (size_t i = 0; i < header.entries; i++) {
                 write_uint32(index_fp, entries[found].ctime_sec);
                 write_uint32(index_fp, entries[found].ctime_nsec);
@@ -486,9 +228,6 @@ int main(int argc, char **argv) {
                 fwrite(&entries[found].flags, 1, 2, index_fp);
                 fwrite(entries[found].path, 1, strlen(entries[found].path),
                        index_fp);
-                for (int i = 0; i < 20; i++)
-                    printf("%02x", entries[found].sha1[i]);
-                printf("\n");
 
                 // Add padding to ensure entry length is a multiple of 8
                 int padding = 8 - ((62 + entries[found].flags) % 8);
@@ -497,13 +236,6 @@ int main(int argc, char **argv) {
                     fwrite(null_bytes, 1, padding, index_fp);
                 }
             }
-
-            // Add padding to ensure entry length is a multiple of 8
-            // int padding = 8 - ((62 + entries[found].flags) % 8);
-            // if (padding < 8) {
-            //     char null_bytes[8] = {0};
-            //     fwrite(null_bytes, 1, padding, index_fp);
-            // }
 
             fseek(index_fp, 0, SEEK_END);
             long index_size = ftell(index_fp);
@@ -515,23 +247,18 @@ int main(int argc, char **argv) {
             // Find checksum
             unsigned char checksum[20];
             SHA1((unsigned char *)index, index_size, checksum);
-            printf("checksum: ");
             for (int i = 0; i < 20; i++)
                 printf("%02x", checksum[i]);
             // Write checksum
             fwrite(checksum, 1, 20, index_fp);
 
-            printf("Updated entry\n");
-
             free(index);
             free(entries);
+            free(hash);
             exit(0);
         } else if (!found) { // Case 2: Entry not found in index
-            printf("Creating new entry\n");
 
-            printf("Found: %d\n", found);
-            printf("Modified: %d\n", modified);
-            // Add entry to index
+            // Make space for new entry
             entries = realloc(entries, ++header.entries *
                                            sizeof(struct git_index_entry));
 
@@ -550,53 +277,19 @@ int main(int argc, char **argv) {
             entries[header.entries - 1].gid = (uint32_t)file_stat.st_gid;
             entries[header.entries - 1].size = (uint32_t)file_stat.st_size;
 
-            FILE *file = fopen(argv[2], "r");
-            fseek(file, 0, SEEK_END);
-            long size = ftell(file);
-            fseek(file, 0, SEEK_SET);
-            char *data = malloc(size);
-            if (data)
-                fread(data, 1, size, file);
-            fclose(file);
-
-            // Create the blob
-            unsigned long ucompSize = size + 10;
-            char *blob = malloc(ucompSize);
-            sprintf(blob, "blob %ld\\0", size);
-            memcpy(blob + 10, data, size);
-            free(data);
-
-            // Hash the file
-            unsigned char hash[20];
-            SHA1((unsigned char *)blob, ucompSize, hash);
-            free(blob);
+            long size;
+            unsigned char *hash = blob_and_hash_file(argv[2], &size);
             memcpy(entries[header.entries - 1].sha1, hash, 20);
 
             // Set flags (path length etc.)
             entries[header.entries - 1].flags = strlen(argv[2]);
             strncpy(entries[header.entries - 1].path, argv[2], BUFSIZ - 1);
 
-            // printf("New number of entries: %u\n\n", header.entries);
-            // for (size_t i = 0; i < header.entries; i++) {
-            //     printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid
-            //     "
-            //            ": %x "
-            //            "gid: %x "
-            //            "size: %x path: %s hash: ",
-            //            entries[i].ctime_sec, entries[i].mtime_sec,
-            //            entries[i].dev, entries[i].ino, entries[i].mode,
-            //            entries[i].uid, entries[i].gid, entries[i].size,
-            //            entries[i].path);
-            //     for (int j = 0; j < 20; j++)
-            //         printf("%02x", entries[i].sha1[j]);
-            //     printf("\n");
-            // }
             index_fp = fopen(".gblimi/index", "wb+");
             if (!index_fp) {
                 perror("Failed to open index file");
                 return 1;
             }
-            // printf("index signature: %s\n", header.signature);
 
             // 12 byte header
             fwrite(header.signature, 1, 4, index_fp);
@@ -604,7 +297,6 @@ int main(int argc, char **argv) {
             write_uint32(index_fp, header.entries);
 
             // Write entries
-            printf("Writing entries %d\n", header.entries);
             for (size_t i = 0; i < header.entries; i++) {
                 write_uint32(index_fp, entries[i].ctime_sec);
                 write_uint32(index_fp, entries[i].ctime_nsec);
@@ -619,17 +311,6 @@ int main(int argc, char **argv) {
                 fwrite(entries[i].sha1, 1, 20, index_fp);
                 fwrite(&entries[i].flags, 1, 2, index_fp);
                 fwrite(entries[i].path, 1, strlen(entries[i].path), index_fp);
-                printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode : %x "
-                       "uid : %x "
-                       "gid: %x "
-                       "size: %x path: %s hash: ",
-                       entries[i].ctime_sec, entries[i].mtime_sec,
-                       entries[i].dev, entries[i].ino, entries[i].mode,
-                       entries[i].uid, entries[i].gid, entries[i].size,
-                       entries[i].path);
-                for (int j = 0; j < 20; j++)
-                    printf("%02x", entries[i].sha1[j]);
-                printf("\n");
 
                 // Add padding to ensure entry length is a multiple of 8
                 int padding = 8 - ((62 + entries[i].flags) % 8);
@@ -638,13 +319,6 @@ int main(int argc, char **argv) {
                     fwrite(null_bytes, 1, padding, index_fp);
                 }
             }
-
-            // Add padding to ensure entry length is a multiple of 8
-            // int padding = 8 - ((62 + entries[header.entries - 1].flags) % 8);
-            // if (padding < 8) {
-            //     char null_bytes[8] = {0};
-            //     fwrite(null_bytes, 1, padding, index_fp);
-            // }
 
             fseek(index_fp, 0, SEEK_END);
             long index_size = ftell(index_fp);
@@ -656,18 +330,16 @@ int main(int argc, char **argv) {
             // Find checksum
             unsigned char checksum[20];
             SHA1((unsigned char *)index, index_size, checksum);
-            printf("checksum: ");
-            for (int i = 0; i < 20; i++)
-                printf("%02x", checksum[i]);
-            printf("\n");
-            // Write checksum
             fwrite(checksum, 1, 20, index_fp);
 
             free(index);
             free(entries);
+            free(hash);
         }
 
         fclose(index_fp);
+        // NOTE: This is the old update-index command
+        //  It is helpful for debugging and staging purposes
     } else if (strcmp(cmd, "update-index2") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: %s update-index <path>\n", argv[0]);
@@ -714,26 +386,8 @@ int main(int argc, char **argv) {
         entry.gid = (uint32_t)file_stat.st_gid;
         entry.size = (uint32_t)file_stat.st_size;
 
-        FILE *file = fopen(argv[2], "r");
-        fseek(file, 0, SEEK_END);
-        long size = ftell(file);
-        fseek(file, 0, SEEK_SET);
-        char *data = malloc(size);
-        if (data)
-            fread(data, 1, size, file);
-        fclose(file);
-
-        // Create the blob
-        unsigned long ucompSize = size + 10;
-        char *blob = malloc(ucompSize);
-        sprintf(blob, "blob %ld\\0", size);
-        memcpy(blob + 10, data, size);
-        free(data);
-
-        // Hash the file
-        unsigned char hash[20];
-        SHA1((unsigned char *)blob, ucompSize, hash);
-        free(blob);
+        size_t size;
+        unsigned char *hash = blob_and_hash_file(argv[2], (long *)&size);
         memcpy(entry.sha1, hash, 20);
 
         // Set flags (path length etc.)
@@ -789,6 +443,8 @@ int main(int argc, char **argv) {
 
         fclose(index_fp);
     } else if (strcmp(cmd, "ls-files") == 0) {
+        // I hate this and dont really get it anymore so ill figure something
+        // different out for this
         // // Read the index
         // FILE *index = fopen(".gblimi/index", "r");
         // fseek(index, 0, SEEK_END);
@@ -851,13 +507,4 @@ int main(int argc, char **argv) {
         return 1;
     }
     return 0;
-}
-
-char *hash_file(char *data, long size) {
-    unsigned char hash[20];
-    SHA1((unsigned char *)data, size, hash);
-    char *hash_str = malloc(41);
-    for (int i = 0; i < 20; i++)
-        sprintf(hash_str + i * 2, "%02x", hash[i]);
-    return hash_str;
 }
