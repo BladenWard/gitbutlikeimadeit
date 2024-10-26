@@ -38,29 +38,28 @@ void read_uint16(FILE *fp, uint16_t *value) {
 }
 
 // Function to read and parse the index file
-void read_index(struct git_index_header *header,
-                struct git_index_entry **entries) {
+int read_index(struct git_index_header *header,
+               struct git_index_entry **entries) {
     char index_path[256];
     snprintf(index_path, 256, ".gblimi/index");
     FILE *fp = fopen(index_path, "rb");
     // TODO: return error if file doesn't exist
     // so we can create it
     if (!fp) {
-        printf("Error opening index file\n");
-        return;
+        printf("No index file found\n");
+        return 2;
     }
 
     // Read header
     if (fread(&header->signature, 4, 1, fp) != 1) {
-        printf("Error reading header\n");
         fclose(fp);
-        return;
+        perror("Error reading header\n");
+        return 1;
     }
     // Verify signature
     if (memcmp(header->signature, "DIRC", 4) != 0) {
-        printf("Invalid index file signature\n");
         fclose(fp);
-        return;
+        perror("Invalid index file signature\n");
     }
     // Read rest of header
     read_uint32(fp, &header->version);
@@ -93,6 +92,7 @@ void read_index(struct git_index_header *header,
     }
 
     fclose(fp);
+    return 0;
 }
 
 void write_uint32(FILE *fp, uint32_t value) {
@@ -155,7 +155,42 @@ int main(int argc, char **argv) {
         struct git_index_header header;
         struct git_index_entry *entries;
 
-        read_index(&header, &entries);
+        int file_code = read_index(&header, &entries);
+
+        if (file_code == 2) {
+            index_fp = fopen(".gblimi/index", "wb+");
+            if (!index_fp) {
+                perror("Failed to open index file");
+                return 1;
+            }
+
+            header.signature[0] = 'D';
+            header.signature[1] = 'I';
+            header.signature[2] = 'R';
+            header.signature[3] = 'C';
+            header.entries = 0;
+            header.version = 2;
+
+            // 12 byte header
+            fwrite(header.signature, 1, 4, index_fp);
+            write_uint32(index_fp, header.version);
+            write_uint32(index_fp, header.entries);
+
+            fseek(index_fp, 0, SEEK_END);
+            long index_size = ftell(index_fp);
+            fseek(index_fp, 0, SEEK_SET);
+            char *index = malloc(index_size);
+            if (index)
+                fread(index, 1, index_size, index_fp);
+
+            // Find checksum
+            unsigned char checksum[20];
+            SHA1((unsigned char *)index, index_size, checksum);
+            for (int i = 0; i < 20; i++)
+                printf("%02x", checksum[i]);
+            // Write checksum
+            fwrite(checksum, 1, 20, index_fp);
+        }
 
         struct stat file_stat;
         if (stat(argv[2], &file_stat) != 0) {
