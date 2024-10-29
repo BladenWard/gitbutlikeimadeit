@@ -80,16 +80,32 @@ int read_index(struct git_index_header *header,
         read_uint32(fp, &(*entries)[i].gid);
         read_uint32(fp, &(*entries)[i].size);
         fread((*entries)[i].sha1, 1, 20, fp);
-        read_uint16(fp, &(*entries)[i].flags);
+        fread(&(*entries)[i].flags, 1, 2, fp);
         char path[4096]; // Max path length
         int c, path_len = 0;
         while ((c = fgetc(fp)) != '\0' && c != EOF && path_len < 4095) {
             path[path_len++] = c;
         }
         path[path_len] = '\0';
-        strncpy((*entries)[i].path, path, BUFSIZ - 1);
-        while (fgetc(fp) != '\0')
-            ;
+        strncpy((*entries)[i].path, path, path_len);
+        int padding = (8 - ((62 + path_len) % 8)) - 1;
+        if (padding > 0) {
+            char null_bytes[8] = {0};
+            fread(null_bytes, 1, padding, fp);
+        }
+        // while (fgetc(fp) == '\0')
+        //     ;
+        //
+        // printf(
+        //     "Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x gid:
+        //     %x " "size: %x path: %s hash: ",
+        //     (*entries)[i].ctime_sec, (*entries)[i].mtime_sec,
+        //     (*entries)[i].dev,
+        //     (*entries)[i].ino, (*entries)[i].mode, (*entries)[i].uid,
+        //     (*entries)[i].gid, (*entries)[i].size, (*entries)[i].path);
+        // for (int j = 0; j < 20; j++)
+        //     printf("%02x", (*entries)[i].sha1[j]);
+        // printf("\n");
     }
 
     fclose(fp);
@@ -103,6 +119,13 @@ void write_uint32(FILE *fp, uint32_t value) {
     buf[2] = (value >> 8) & 0xFF;
     buf[3] = value & 0xFF;
     fwrite(buf, 1, 4, fp);
+}
+
+void write_uint16(FILE *fp, uint16_t value) {
+    unsigned char buf[2];
+    buf[0] = (value >> 8) & 0xFF;
+    buf[1] = value & 0xFF;
+    fwrite(buf, 1, 2, fp);
 }
 
 void write_index_entry(FILE *fp, struct git_index_entry *entry) {
@@ -146,6 +169,22 @@ int main(int argc, char **argv) {
         return init();
     } else if (strcmp(cmd, "hash-object") == 0) {
         return hash_object(argc, argv);
+    } else if (strcmp(cmd, "read-index") == 0) {
+        struct git_index_header header;
+        struct git_index_entry *entries;
+        read_index(&header, &entries);
+        for (size_t i = 0; i < header.entries; i++) {
+            printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x "
+                   "gid: %x "
+                   "size: %x path: %s hash: ",
+                   entries[i].ctime_sec, entries[i].mtime_sec, entries[i].dev,
+                   entries[i].ino, entries[i].mode, entries[i].uid,
+                   entries[i].gid, entries[i].size, entries[i].path);
+            for (int j = 0; j < 20; j++)
+                printf("%02x", entries[i].sha1[j]);
+            printf("\n");
+        }
+        free(entries);
     } else if (strcmp(cmd, "update-index") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: %s update-index <path>\n", argv[0]);
@@ -244,7 +283,7 @@ int main(int argc, char **argv) {
 
             // Set flags (path length etc.)
             entries[found].flags = strlen(argv[2]);
-            strncpy(entries[found].path, argv[2], BUFSIZ - 1);
+            strncpy(entries[found].path, argv[2], entries[found].flags);
 
             for (int i = 0; i < 20; i++)
                 printf("%02x", entries[found].sha1[i]);
@@ -262,23 +301,22 @@ int main(int argc, char **argv) {
 
             // Write entries
             for (size_t i = 0; i < header.entries; i++) {
-                write_uint32(index_fp, entries[found].ctime_sec);
-                write_uint32(index_fp, entries[found].ctime_nsec);
-                write_uint32(index_fp, entries[found].mtime_sec);
-                write_uint32(index_fp, entries[found].mtime_nsec);
-                write_uint32(index_fp, entries[found].dev);
-                write_uint32(index_fp, entries[found].ino);
-                write_uint32(index_fp, entries[found].mode);
-                write_uint32(index_fp, entries[found].uid);
-                write_uint32(index_fp, entries[found].gid);
-                write_uint32(index_fp, entries[found].size);
-                fwrite(entries[found].sha1, 1, 20, index_fp);
-                fwrite(&entries[found].flags, 1, 2, index_fp);
-                fwrite(entries[found].path, 1, strlen(entries[found].path),
-                       index_fp);
+                write_uint32(index_fp, entries[i].ctime_sec);
+                write_uint32(index_fp, entries[i].ctime_nsec);
+                write_uint32(index_fp, entries[i].mtime_sec);
+                write_uint32(index_fp, entries[i].mtime_nsec);
+                write_uint32(index_fp, entries[i].dev);
+                write_uint32(index_fp, entries[i].ino);
+                write_uint32(index_fp, entries[i].mode);
+                write_uint32(index_fp, entries[i].uid);
+                write_uint32(index_fp, entries[i].gid);
+                write_uint32(index_fp, entries[i].size);
+                fwrite(entries[i].sha1, 1, 20, index_fp);
+                fwrite(&entries[i].flags, 1, 2, index_fp);
+                fwrite(entries[i].path, 1, entries[i].flags, index_fp);
 
                 // Add padding to ensure entry length is a multiple of 8
-                int padding = 8 - ((62 + entries[found].flags) % 8);
+                int padding = 8 - ((62 + entries[i].flags) % 8);
                 if (padding < 8) {
                     char null_bytes[8] = {0};
                     fwrite(null_bytes, 1, padding, index_fp);
@@ -332,7 +370,8 @@ int main(int argc, char **argv) {
 
             // Set flags (path length etc.)
             entries[header.entries - 1].flags = strlen(argv[2]);
-            strncpy(entries[header.entries - 1].path, argv[2], BUFSIZ - 1);
+            strncpy(entries[header.entries - 1].path, argv[2],
+                    entries[header.entries - 1].flags);
 
             index_fp = fopen(".gblimi/index", "wb+");
             if (!index_fp) {
@@ -359,7 +398,7 @@ int main(int argc, char **argv) {
                 write_uint32(index_fp, entries[i].size);
                 fwrite(entries[i].sha1, 1, 20, index_fp);
                 fwrite(&entries[i].flags, 1, 2, index_fp);
-                fwrite(entries[i].path, 1, strlen(entries[i].path), index_fp);
+                fwrite(entries[i].path, 1, entries[i].flags, index_fp);
 
                 // Add padding to ensure entry length is a multiple of 8
                 int padding = 8 - ((62 + entries[i].flags) % 8);
