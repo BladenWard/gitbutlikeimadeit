@@ -20,5 +20,5 @@ struct git_index_entry {
     uint32_t size;
     unsigned char sha1[20];
     uint16_t flags;
-    char path[1024];
+    char path[4096];
 };
