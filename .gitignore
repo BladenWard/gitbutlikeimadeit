@@ -7,3 +7,5 @@ gblimi
 .cache
 
 test/
+
+*.o
