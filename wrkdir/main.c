@@ -207,13 +207,13 @@ void write_index_checksum(FILE *fp) {
     free(index);
 }
 
-void write_index(struct git_index_header header,
+void write_index(FILE *fp, struct git_index_header header,
                  struct git_index_entry *entries) {
-    FILE *fp = fopen(".gblimi/index", "wb+");
-    if (!fp) {
-        perror("Failed to open index file");
-        return;
-    }
+    // FILE *fp = fopen(".gblimi/index", "wb+");
+    // if (!fp) {
+    //     perror("Failed to open index file");
+    //     return;
+    // }
 
     write_index_header(fp, &header);
 
@@ -293,7 +293,11 @@ int main(int argc, char **argv) {
             prep_entry(&entries[header.entries - 1], &file_stat, argv[2]);
         }
 
-        write_index(header, entries);
+        FILE *fp = fopen(".gblimi/index", "wb+");
+        if (!fp)
+            perror("Failed to open index file");
+
+        write_index(fp, header, entries);
 
         free(entries);
     } else if (strcmp(cmd, "ls-files") == 0) {
