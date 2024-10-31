@@ -49,6 +49,14 @@ int read_index(struct git_index_header *header,
     FILE *fp = fopen(index_path, "rb");
     if (!fp) {
         fclose(fp);
+        header->signature[0] = 'D';
+        header->signature[1] = 'I';
+        header->signature[2] = 'R';
+        header->signature[3] = 'C';
+        header->entries = 0;
+        header->version = 2;
+
+        *entries = malloc(sizeof(struct git_index_entry));
         return 2;
     }
 
@@ -175,7 +183,6 @@ void write_index_entry(FILE *fp, struct git_index_entry *entry) {
     fwrite(&entry->flags, 1, 2, fp);
     fwrite(entry->path, 1, entry->flags, fp);
 
-    // Add padding to ensure entry length is a multiple of 8
     int padding = 8 - ((62 + entry->flags) % 8);
     if (padding < 8) {
         char null_bytes[8] = {0};
@@ -200,34 +207,20 @@ void write_index_checksum(FILE *fp) {
     free(index);
 }
 
-void update_index(FILE *fp, struct git_index_header *header,
-                  struct git_index_entry **entries, int entry_index,
-                  struct stat *file_stat, char *path, int flags) {
-    // printf("Header: %d Entries: %d\n", header->entries, entry_index);
-    //
-    // prep_entry(entries[entry_index], file_stat, path);
-    write_index_header(fp, header);
+void write_index(struct git_index_header header,
+                 struct git_index_entry *entries) {
+    FILE *fp = fopen(".gblimi/index", "wb+");
+    if (!fp) {
+        perror("Failed to open index file");
+        return;
+    }
 
-    for (size_t i = 0; i < header->entries; i++)
-        write_index_entry(fp, entries[i]);
+    write_index_header(fp, &header);
+
+    for (size_t i = 0; i < header.entries; i++)
+        write_index_entry(fp, &entries[i]);
 
     write_index_checksum(fp);
-
-    // for (int i = 0; i < 20; i++)
-    //     printf("%02x", entries[entry_index].sha1[i]);
-
-    // fp = fopen(".gblimi/index", "wb+");
-    // if (!fp) {
-    //     perror("Failed to open index file");
-    //     return;
-    // }
-
-    // write_index_header(fp, header);
-    //
-    // for (size_t i = 0; i < header->entries; i++)
-    //     write_index_entry(fp, &entries[i]);
-    //
-    // write_index_checksum(fp);
 }
 
 int main(int argc, char **argv) {
@@ -245,49 +238,40 @@ int main(int argc, char **argv) {
 
         return hash_object(argc, argv);
 
-    } else if (strcmp(cmd, "read-index") == 0) {
-
-        struct git_index_header header;
-        struct git_index_entry *entries;
-        read_index(&header, &entries);
-        for (size_t i = 0; i < header.entries; i++) {
-            printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x uid: %x "
-                   "gid: %x "
-                   "size: %x path: %s hash: ",
-                   entries[i].ctime_sec, entries[i].mtime_sec, entries[i].dev,
-                   entries[i].ino, entries[i].mode, entries[i].uid,
-                   entries[i].gid, entries[i].size, entries[i].path);
-            for (int j = 0; j < 20; j++)
-                printf("%02x", entries[i].sha1[j]);
-            printf("\n");
-        }
-        free(entries);
-
+        // } else if (strcmp(cmd, "read-index") == 0) {
+        //
+        //     struct git_index_header header;
+        //     struct git_index_entry *entries;
+        //     read_index(&header, &entries);
+        //     for (size_t i = 0; i < header.entries; i++) {
+        //         printf("Hex: ctime: %x mtime: %x dev: %x ino: %x mode: %x
+        //         uid: %x "
+        //                "gid: %x "
+        //                "size: %x path: %s hash: ",
+        //                entries[i].ctime_sec, entries[i].mtime_sec,
+        //                entries[i].dev, entries[i].ino, entries[i].mode,
+        //                entries[i].uid, entries[i].gid, entries[i].size,
+        //                entries[i].path);
+        //         for (int j = 0; j < 20; j++)
+        //             printf("%02x", entries[i].sha1[j]);
+        //         printf("\n");
+        //     }
+        //     free(entries);
+        //
     } else if (strcmp(cmd, "update-index") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: %s update-index <path>\n", argv[0]);
             return 1;
         }
 
-        FILE *index_fp;
         struct git_index_header header;
         struct git_index_entry *entries;
 
         int file_code = read_index(&header, &entries);
 
-        if (file_code == 2) {
-            header.signature[0] = 'D';
-            header.signature[1] = 'I';
-            header.signature[2] = 'R';
-            header.signature[3] = 'C';
-            header.entries = 0;
-            header.version = 2;
-        }
-
         struct stat file_stat;
         if (stat(argv[2], &file_stat) != 0) {
             perror("Failed to get file stats");
-            fclose(index_fp);
             return 1;
         }
 
@@ -302,56 +286,25 @@ int main(int argc, char **argv) {
         }
 
         if (found && modified) {
-            found--;
-            prep_entry(&entries[found], &file_stat, argv[2]);
+            prep_entry(&entries[--found], &file_stat, argv[2]);
         } else if (!found) {
             entries = realloc(entries, ++header.entries *
                                            sizeof(struct git_index_entry));
             prep_entry(&entries[header.entries - 1], &file_stat, argv[2]);
         }
 
-        index_fp = fopen(".gblimi/index", "wb+");
-        if (!index_fp) {
-            perror("Failed to open index file");
-            return 1;
-        }
-
-        write_index_header(index_fp, &header);
-
-        for (size_t i = 0; i < header.entries; i++)
-            write_index_entry(index_fp, &entries[i]);
-
-        write_index_checksum(index_fp);
+        write_index(header, entries);
 
         free(entries);
-        fclose(index_fp);
     } else if (strcmp(cmd, "ls-files") == 0) {
-        // I hate this and dont really get it anymore so ill figure
-        // something different out for this
-        // // Read the index
-        // FILE *index = fopen(".gblimi/index", "r");
-        // fseek(index, 0, SEEK_END);
-        // long size = ftell(index);
-        // fseek(index, 0, SEEK_SET);
-        // char *data = malloc(size);
-        // if (data)
-        //     fread(data, 1, size, index);
-        // fclose(index);
-        //
-        // // Parse the index
-        // char *ptr = data;
-        // while (ptr < data + size) {
-        //     char *hash = ptr;
-        //     ptr += 40;
-        //     char *mode = ptr;
-        //     ptr += 10;
-        //     char *path = ptr;
-        //     ptr += strlen(path) + 1;
-        //
-        //     printf("%s %s\n", hash, path);
-        // }
-        //
-        // free(data);
+        struct git_index_header header;
+        struct git_index_entry *entries;
+        read_index(&header, &entries);
+
+        for (size_t i = 0; i < header.entries; i++)
+            printf("%s\n", entries[i].path);
+
+        free(entries);
     } else if (strcmp(cmd, "cat-file") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: %s cat-file <hash>\n", argv[0]);
