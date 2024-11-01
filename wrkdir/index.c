@@ -104,6 +104,7 @@ void write_index_entry(FILE *fp, struct git_index_entry *entry) {
     write_uint32(fp, entry->mtime_nsec);
     write_uint32(fp, entry->dev);
     write_uint32(fp, entry->ino);
+    // TODO: use git modes instead of unix modes
     write_uint32(fp, entry->mode);
     write_uint32(fp, entry->uid);
     write_uint32(fp, entry->gid);

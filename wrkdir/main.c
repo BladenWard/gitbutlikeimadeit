@@ -9,7 +9,7 @@
 #include "index.h"
 
 // TODO: Commands to add
-// - cat-file
+// - ~cat-file~
 // - add
 // - commit
 // - checkout
@@ -23,6 +23,15 @@
 // - show-ref
 // - status
 // - tag
+
+#define RED "\x1B[31m"
+#define GRN "\x1B[32m"
+#define YEL "\x1B[33m"
+#define BLU "\x1B[34m"
+#define MAG "\x1B[35m"
+#define CYN "\x1B[36m"
+#define WHT "\x1B[37m"
+#define RESET "\x1B[0m"
 
 int init() {
     // Create the nessecary dirs
@@ -68,8 +77,8 @@ int write_tree(int argc, char **argv) {
     }
 
     int header_offset = 4 + 1 + 4 + 1;
-
     size_t ucompSize = 0;
+
     ucompSize += header_offset;
     for (size_t i = 0; i < header.entries; i++)
         ucompSize += 4 + 1 + entries[i].flags + 1 + 40;
@@ -84,7 +93,6 @@ int write_tree(int argc, char **argv) {
                 tree_entries[i].sha1);
         entry_size += 4 + 1 + entries[i].flags + 1 + 42;
     }
-    printf("%s", tree);
 
     // Hash the tree
     unsigned char hash[20];
@@ -92,7 +100,6 @@ int write_tree(int argc, char **argv) {
     char *hash_str = malloc(41);
     for (int i = 0; i < 20; i++)
         sprintf(hash_str + i * 2, "%02x", hash[i]);
-    printf("%s\n", hash_str);
 
     // Create the tree path
     char dir[3] = {hash_str[0], hash_str[1], '\0'};
@@ -106,14 +113,42 @@ int write_tree(int argc, char **argv) {
     tree_path[18] = '\0';
     mkdir(tree_path, 0777);
 
+    // Compress the blob
+    unsigned long compressed_size = compressBound(ucompSize);
+    char *compressed = malloc(compressed_size);
+    compress((Bytef *)compressed, &compressed_size, (Bytef *)tree, ucompSize);
+
+    // TODO: Compress the tree
     // Write the tree
     tree_path[18] = '/';
     FILE *object = fopen(tree_path, "w");
-    fwrite(tree, 1, ucompSize, object);
-    printf("Created tree path: %s\n", tree_path);
+    fwrite(compressed, 1, compressed_size, object);
+    printf("%s\n", hash_str);
 
+    free(compressed);
     free(tree);
+    free(tree_path);
     free(entries);
+
+    return 0;
+}
+
+int search_index(struct git_index_header header,
+                 struct git_index_entry *entries, struct stat *file_stat,
+                 char *path, int *found) {
+    if (stat(path, file_stat) != 0) {
+        perror("Failed to get file stats");
+        return 1;
+    }
+
+    int modified = 0;
+    for (int i = 0; i < header.entries; i++) {
+        if (strcmp(entries[i].path, path) == 0) {
+            *found = i + 1;
+            if (entries[i].mtime_sec < file_stat->st_mtime)
+                return 1;
+        }
+    }
 
     return 0;
 }
@@ -130,20 +165,12 @@ int update_index(int argc, char **argv) {
     int file_code = read_index(&header, &entries);
 
     struct stat file_stat;
-    if (stat(argv[2], &file_stat) != 0) {
-        perror("Failed to get file stats");
-        return 1;
-    }
+    int found;
+    int modified = search_index(header, entries, &file_stat, argv[2], &found);
 
-    int found = 0;
-    int modified = 0;
-    for (int i = 0; i < header.entries; i++) {
-        if (strcmp(entries[i].path, argv[2]) == 0) {
-            found = i + 1;
-            if (entries[i].mtime_sec < file_stat.st_mtime)
-                modified = 1;
-        }
-    }
+    size_t path_len = strlen(argv[2]);
+    if (file_stat.st_mode & S_IFDIR && argv[2][path_len - 1] == '/')
+        argv[2][path_len - 1] = '\0';
 
     if (found && modified) {
         prep_index_entry(&entries[--found], &file_stat, argv[2]);
@@ -170,7 +197,7 @@ int ls_files(int argc, char **argv) {
     read_index(&header, &entries);
 
     for (size_t i = 0; i < header.entries; i++)
-        printf("%s\n", entries[i].path);
+        printf(YEL "%s\n" RESET, entries[i].path);
 
     free(entries);
 
@@ -204,6 +231,7 @@ int cat_file(int argc, char **argv) {
     // Decompress the object
     char *blob = malloc(size);
     uncompress((Bytef *)blob, (uLongf *)&size, (Bytef *)data, size);
+
     // Print the blob
     printf("%s\n", blob + 10);
 
