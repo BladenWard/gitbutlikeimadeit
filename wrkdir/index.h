@@ -36,6 +36,7 @@ void prep_index_entry(struct git_index_entry *entry, struct stat *file_stat,
 
 void write_index_header(FILE *fp, struct git_index_header *header);
 
+// TODO: Sort the entries
 void write_index_entry(FILE *fp, struct git_index_entry *entry);
 
 void write_index_checksum(FILE *fp);

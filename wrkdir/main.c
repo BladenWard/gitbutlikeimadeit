@@ -154,10 +154,15 @@ int search_index(struct git_index_header header,
 }
 
 int update_index(int argc, char **argv) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s update-index <path>\n", argv[0]);
+    if (argc < 4) {
+        fprintf(stderr, "Usage: %s update-index [--add | --remove] <path>\n",
+                argv[0]);
         return 1;
     }
+
+    size_t path_len = strlen(argv[3]);
+    if (argv[3][path_len - 1] == '/')
+        argv[3][path_len - 1] = '\0';
 
     struct git_index_header header;
     struct git_index_entry *entries;
@@ -166,18 +171,22 @@ int update_index(int argc, char **argv) {
 
     struct stat file_stat;
     int found;
-    int modified = search_index(header, entries, &file_stat, argv[2], &found);
+    int modified = search_index(header, entries, &file_stat, argv[3], &found);
 
-    size_t path_len = strlen(argv[2]);
-    if (file_stat.st_mode & S_IFDIR && argv[2][path_len - 1] == '/')
-        argv[2][path_len - 1] = '\0';
-
-    if (found && modified) {
-        prep_index_entry(&entries[--found], &file_stat, argv[2]);
-    } else if (!found) {
-        entries =
-            realloc(entries, ++header.entries * sizeof(struct git_index_entry));
-        prep_index_entry(&entries[header.entries - 1], &file_stat, argv[2]);
+    if (strcmp(argv[2], "--add") == 0) {
+        if (found && modified) {
+            prep_index_entry(&entries[--found], &file_stat, argv[3]);
+        } else if (!found) {
+            entries = realloc(entries, ++header.entries *
+                                           sizeof(struct git_index_entry));
+            prep_index_entry(&entries[header.entries - 1], &file_stat, argv[3]);
+        }
+    } else if (strcmp(argv[2], "--remove") == 0) {
+        if (found--) {
+            entries[found] = entries[--header.entries];
+            entries = realloc(entries,
+                              header.entries * sizeof(struct git_index_entry));
+        }
     }
 
     FILE *fp = fopen(".gblimi/index", "wb+");
