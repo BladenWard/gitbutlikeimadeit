@@ -1,4 +1,12 @@
+#ifndef INDEX_H
+#define INDEX_H
+
+#include <openssl/sha.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 
 struct git_index_header {
     char signature[4]; // Should be "DIRC"
@@ -22,3 +30,20 @@ struct git_index_entry {
     uint16_t flags;
     char path[4096];
 };
+
+void prep_index_entry(struct git_index_entry *entry, struct stat *file_stat,
+                      char *path);
+
+void write_index_header(FILE *fp, struct git_index_header *header);
+
+void write_index_entry(FILE *fp, struct git_index_entry *entry);
+
+void write_index_checksum(FILE *fp);
+
+void write_index(FILE *fp, struct git_index_header header,
+                 struct git_index_entry *entries);
+
+int read_index(struct git_index_header *header,
+               struct git_index_entry **entries);
+
+#endif
