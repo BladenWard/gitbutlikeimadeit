@@ -33,6 +33,7 @@ unsigned char *blob_and_hash_file(char *filepath, long *size) {
     return SHA1((unsigned char *)blob, ucompSize, hash);
 }
 
+// TODO: these are almost the same function, refactor
 char *blob_file(char *filepath, size_t *size) {
     // Read the file
     FILE *file = fopen(filepath, "r");

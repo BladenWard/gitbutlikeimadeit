@@ -258,6 +258,85 @@ int main(int argc, char **argv) {
         //     }
         //     free(entries);
         //
+    } else if (strcmp(cmd, "write-tree") == 0) {
+        struct git_index_header header;
+        struct git_index_entry *entries;
+        read_index(&header, &entries);
+
+        size_t content_size = 0;
+        struct stat file_stat;
+        for (size_t i = 0; i < header.entries; i++)
+            if (stat(entries[i].path, &file_stat) == 0)
+                content_size += file_stat.st_size;
+
+        struct git_tree_entry {
+            uint32_t mode;
+            char *path;
+            char sha1[41];
+        };
+
+        struct git_tree_entry tree_entries[header.entries];
+
+        for (size_t i = 0; i < header.entries; i++) {
+            tree_entries[i].mode = entries[i].mode;
+            tree_entries[i].path = entries[i].path;
+            for (int j = 0; j < 20; j++)
+                snprintf(tree_entries[i].sha1 + (j * 2), 3, "%02x",
+                         entries[i].sha1[j]);
+        }
+        // for (size_t i = 0; i < header.entries; i++) {
+        //     printf("%u %s %s\n", tree_entries[i].mode, tree_entries[i].path,
+        //            tree_entries[i].sha1);
+        // }
+
+        int header_offset = 4 + 1 + 4 + 1;
+
+        size_t ucompSize = 0;
+        ucompSize += header_offset;
+        for (size_t i = 0; i < header.entries; i++)
+            ucompSize += 4 + 1 + entries[i].flags + 1 + 40;
+
+        char *tree = malloc(ucompSize * sizeof(char));
+        sprintf(tree, "tree %zu\n", content_size);
+
+        size_t entry_size = 0;
+        for (size_t i = 0; i < header.entries; i++) {
+            sprintf(tree + header_offset + (entry_size), "%u %s %s\n",
+                    tree_entries[i].mode, tree_entries[i].path,
+                    tree_entries[i].sha1);
+            entry_size += 4 + 1 + entries[i].flags + 1 + 42;
+        }
+        printf("%s", tree);
+
+        // Hash the tree
+        unsigned char hash[20];
+        SHA1((unsigned char *)tree, ucompSize, hash);
+        char *hash_str = malloc(41);
+        for (int i = 0; i < 20; i++)
+            sprintf(hash_str + i * 2, "%02x", hash[i]);
+        printf("%s\n", hash_str);
+
+        // Create the tree path
+        char dir[3] = {hash_str[0], hash_str[1], '\0'};
+        char *tree_path =
+            malloc(16 + 2 + 1 + strlen(hash_str + 2) * sizeof(char));
+
+        snprintf(tree_path,
+                 strlen(".gblimi/objects/") + strlen(dir) + 1 +
+                     strlen(hash_str + 2) + 1,
+                 ".gblimi/objects/%s/%s", dir, hash_str + 2);
+
+        tree_path[18] = '\0';
+        mkdir(tree_path, 0777);
+
+        // Write the tree
+        tree_path[18] = '/';
+        FILE *object = fopen(tree_path, "w");
+        fwrite(tree, 1, ucompSize, object);
+        printf("Created tree path: %s\n", tree_path);
+
+        free(tree);
+        free(entries);
     } else if (strcmp(cmd, "update-index") == 0) {
         if (argc < 3) {
             fprintf(stderr, "Usage: %s update-index <path>\n", argv[0]);
