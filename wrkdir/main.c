@@ -84,14 +84,14 @@ int write_tree(int argc, char **argv) {
         ucompSize += 4 + 1 + entries[i].flags + 1 + 40;
 
     char *tree = malloc(ucompSize * sizeof(char));
-    sprintf(tree, "tree %zu\n", content_size);
+    sprintf(tree, "tree %zu%c", content_size, '\0');
 
     size_t entry_size = 0;
     for (size_t i = 0; i < header.entries; i++) {
-        sprintf(tree + header_offset + (entry_size), "%u %s %s\n",
-                tree_entries[i].mode, tree_entries[i].path,
+        sprintf(tree + header_offset + (entry_size), "%u %s%c%s",
+                tree_entries[i].mode, tree_entries[i].path, '\0',
                 tree_entries[i].sha1);
-        entry_size += 4 + 1 + entries[i].flags + 1 + 42;
+        entry_size += 4 + 1 + entries[i].flags + 1 + 40;
     }
 
     // Hash the tree
@@ -118,7 +118,6 @@ int write_tree(int argc, char **argv) {
     char *compressed = malloc(compressed_size);
     compress((Bytef *)compressed, &compressed_size, (Bytef *)tree, ucompSize);
 
-    // TODO: Compress the tree
     // Write the tree
     tree_path[18] = '/';
     FILE *object = fopen(tree_path, "w");
@@ -205,8 +204,20 @@ int ls_files(int argc, char **argv) {
     struct git_index_entry *entries;
     read_index(&header, &entries);
 
-    for (size_t i = 0; i < header.entries; i++)
-        printf(YEL "%s\n" RESET, entries[i].path);
+    if (argc > 2 && strcmp(argv[2], "--log") == 0) {
+        for (size_t i = 0; i < header.entries; i++) {
+            printf(YEL "%s " RESET "mode: %u "
+                       "size: %u "
+                       "sha1: " GRN,
+                   entries[i].path, entries[i].mode, entries[i].size);
+            for (int j = 0; j < 20; j++)
+                printf("%02x", entries[i].sha1[j]);
+            printf(RESET "\n");
+        }
+    } else {
+        for (size_t i = 0; i < header.entries; i++)
+            printf(YEL "%s\n" RESET, entries[i].path);
+    }
 
     free(entries);
 
@@ -251,6 +262,85 @@ int cat_file(int argc, char **argv) {
     return 0;
 }
 
+struct git_tree_entry *read_tree(char *tree) {
+    struct git_tree_header;
+    struct git_tree_entry *entries;
+
+    char *c = tree;
+    while (*c != '\0') {
+        printf("%s\n", c);
+        c += 1;
+    }
+    printf("%c\n", *++c);
+    // char *type = tree;
+    // type[4] = '\0';
+    // uint32_t content_size = 0;
+    // size_t content_size_len = 0;
+    // char *c = tree + 5;
+    // while (*c != '\0') {
+    //     content_size += atoi(c);
+    //     content_size_len++;
+    //     c += atoi(c) + 1;
+    // }
+    //
+    // while (*c != '\0') {
+    //     printf("%s\n", c);
+    //     c += atoi(c) + 1;
+    // }
+
+    // char mode[7];
+    // for (int i = 0; i < 6; i++)
+    //     mode[i] = c[i];
+
+    char *path;
+
+    // printf("%s %u\n", type, content_size);
+    // printf("%s\n", mode);
+
+    return entries;
+}
+
+int ls_tree(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
+        return 1;
+    }
+
+    // Make the object path
+    char *object_path =
+        malloc(strlen(".gblimi/objects/") + strlen(argv[2]) + 2);
+
+    char dir[3] = {argv[2][0], argv[2][1], '\0'};
+    snprintf(object_path, strlen(".gblimi/objects/") + strlen(argv[2]) + 2,
+             ".gblimi/objects/%s/%s", dir, argv[2] + 2);
+
+    // Read the object
+    FILE *object = fopen(object_path, "r");
+    fseek(object, 0, SEEK_END);
+    long size = ftell(object);
+    fseek(object, 0, SEEK_SET);
+    char *data = malloc(size);
+    if (data)
+        fread(data, 1, size, object);
+    fclose(object);
+
+    // Decompress the object
+    char *blob = malloc(size);
+    uncompress((Bytef *)blob, (uLongf *)&size, (Bytef *)data, size);
+
+    struct git_tree_entry *entries = read_tree(blob);
+
+    // Print the blob
+    // char *tree = blob + 10;
+    // size_t tree_size = size;
+    // printf("%s\n", tree);
+
+    free(blob);
+    free(data);
+
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
@@ -277,6 +367,10 @@ int main(int argc, char **argv) {
     } else if (strcmp(cmd, "ls-files") == 0) {
 
         return ls_files(argc, argv);
+
+    } else if (strcmp(cmd, "ls-tree") == 0) {
+
+        return ls_tree(argc, argv);
 
     } else if (strcmp(cmd, "cat-file") == 0) {
 
