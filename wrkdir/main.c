@@ -33,6 +33,12 @@
 #define WHT "\x1B[37m"
 #define RESET "\x1B[0m"
 
+struct git_tree_entry {
+    uint32_t mode;
+    char *path;
+    char sha1[41];
+};
+
 int init() {
     // Create the nessecary dirs
     mkdir(".gblimi", 0777);
@@ -60,12 +66,6 @@ int write_tree(int argc, char **argv) {
         if (stat(entries[i].path, &file_stat) == 0)
             content_size += file_stat.st_size;
 
-    struct git_tree_entry {
-        uint32_t mode;
-        char *path;
-        char sha1[41];
-    };
-
     struct git_tree_entry tree_entries[header.entries];
 
     for (size_t i = 0; i < header.entries; i++) {
@@ -81,17 +81,17 @@ int write_tree(int argc, char **argv) {
 
     ucompSize += header_offset;
     for (size_t i = 0; i < header.entries; i++)
-        ucompSize += 4 + 1 + entries[i].flags + 1 + 40;
+        ucompSize += 4 + 1 + entries[i].flags + 1 + 43;
 
     char *tree = malloc(ucompSize * sizeof(char));
     sprintf(tree, "tree %zu%c", content_size, '\0');
 
     size_t entry_size = 0;
     for (size_t i = 0; i < header.entries; i++) {
-        sprintf(tree + header_offset + (entry_size), "%u %s%c%s",
-                tree_entries[i].mode, tree_entries[i].path, '\0',
-                tree_entries[i].sha1);
-        entry_size += 4 + 1 + entries[i].flags + 1 + 40;
+        sprintf(tree + header_offset + (entry_size), "%u %s %s%c",
+                tree_entries[i].mode, tree_entries[i].path,
+                tree_entries[i].sha1, '\0');
+        entry_size += 4 + 1 + entries[i].flags + 1 + 43;
     }
 
     // Hash the tree
@@ -266,77 +266,69 @@ struct git_tree_entry *read_tree(char *tree) {
     struct git_tree_header;
     struct git_tree_entry *entries;
 
-    char *c = tree;
-    while (*c != '\0') {
-        printf("%s\n", c);
-        c += 1;
-    }
-    printf("%c\n", *++c);
-    // char *type = tree;
-    // type[4] = '\0';
-    // uint32_t content_size = 0;
-    // size_t content_size_len = 0;
-    // char *c = tree + 5;
-    // while (*c != '\0') {
-    //     content_size += atoi(c);
-    //     content_size_len++;
-    //     c += atoi(c) + 1;
-    // }
-    //
-    // while (*c != '\0') {
-    //     printf("%s\n", c);
-    //     c += atoi(c) + 1;
-    // }
-
-    // char mode[7];
-    // for (int i = 0; i < 6; i++)
-    //     mode[i] = c[i];
-
-    char *path;
-
-    // printf("%s %u\n", type, content_size);
-    // printf("%s\n", mode);
+    printf("%s\n", tree);
 
     return entries;
 }
 
 int ls_tree(int argc, char **argv) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
-        return 1;
-    }
-
-    // Make the object path
-    char *object_path =
-        malloc(strlen(".gblimi/objects/") + strlen(argv[2]) + 2);
-
-    char dir[3] = {argv[2][0], argv[2][1], '\0'};
-    snprintf(object_path, strlen(".gblimi/objects/") + strlen(argv[2]) + 2,
-             ".gblimi/objects/%s/%s", dir, argv[2] + 2);
-
-    // Read the object
-    FILE *object = fopen(object_path, "r");
-    fseek(object, 0, SEEK_END);
-    long size = ftell(object);
-    fseek(object, 0, SEEK_SET);
-    char *data = malloc(size);
-    if (data)
-        fread(data, 1, size, object);
-    fclose(object);
-
-    // Decompress the object
-    char *blob = malloc(size);
-    uncompress((Bytef *)blob, (uLongf *)&size, (Bytef *)data, size);
-
-    struct git_tree_entry *entries = read_tree(blob);
-
-    // Print the blob
-    // char *tree = blob + 10;
-    // size_t tree_size = size;
+    // if (argc < 3) {
+    //     fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
+    //     return 1;
+    // }
+    //
+    // // Make the object path
+    // char *object_path =
+    //     malloc(strlen(".gblimi/objects/") + strlen(argv[2]) + 2);
+    //
+    // char dir[3] = {argv[2][0], argv[2][1], '\0'};
+    // snprintf(object_path, strlen(".gblimi/objects/") + strlen(argv[2]) + 2,
+    //          ".gblimi/objects/%s/%s", dir, argv[2] + 2);
+    //
+    // // Read the object
+    // FILE *object = fopen(object_path, "r");
+    // fseek(object, 0, SEEK_END);
+    // long size = ftell(object);
+    // fseek(object, 0, SEEK_SET);
+    // char *data = malloc(size);
+    // if (data)
+    //     fread(data, 1, size, object);
+    // fclose(object);
+    //
+    // // Decompress the object
+    // char *tree = malloc(size);
+    // uncompress((Bytef *)tree, (uLongf *)&size, (Bytef *)data, size);
+    //
+    // while (*tree != '\0')
+    //     tree++;
+    // tree++;
+    //
+    // struct git_tree_entry *entries = malloc(sizeof(struct git_tree_entry));
+    // size_t i = 0;
+    // while (tree[i] != '\0') {
+    //     tree[6] = '\0';
+    //     entries[i].mode = atoi(tree);
+    //     while (*tree != '\0')
+    //         tree++;
+    //     entries[i].path = ++tree;
+    //     tree += strlen(tree) + 1;
+    //     strncpy(entries[i].sha1, tree, 40);
+    //     tree += 42;
+    //     entries = realloc(entries, ++i * sizeof(struct git_tree_entry));
+    // }
+    // for (size_t j = 0; j < i; j++)
+    //     printf("%d %s\n", entries[j].mode, entries[j].path);
+    // while (*tree != '\0')
+    //     tree++;
+    // tree++;
+    // printf("%s\n", tree);
+    // while (*tree != '\0')
+    //     tree++;
+    // tree++;
     // printf("%s\n", tree);
 
-    free(blob);
-    free(data);
+    // free(tree);
+    // free(data);
 
     return 0;
 }
