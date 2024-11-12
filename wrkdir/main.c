@@ -88,13 +88,14 @@ int write_tree(int argc, char **argv) {
 
     size_t entry_size = 0;
     for (size_t i = 0; i < header.entries; i++) {
-        sprintf(tree + header_offset + (entry_size), "%u %s %s%c",
-                tree_entries[i].mode, tree_entries[i].path,
-                tree_entries[i].sha1, '\0');
+        sprintf(tree + header_offset + (entry_size), "%u %s%c%s",
+                tree_entries[i].mode, tree_entries[i].path, '\0',
+                tree_entries[i].sha1);
         entry_size += 4 + 1 + entries[i].flags + 1 + 43;
     }
 
     // Hash the tree
+    // TODO: Move stuff like this to a function
     unsigned char hash[20];
     SHA1((unsigned char *)tree, ucompSize, hash);
     char *hash_str = malloc(41);
@@ -272,63 +273,70 @@ struct git_tree_entry *read_tree(char *tree) {
 }
 
 int ls_tree(int argc, char **argv) {
-    // if (argc < 3) {
-    //     fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
-    //     return 1;
-    // }
-    //
-    // // Make the object path
-    // char *object_path =
-    //     malloc(strlen(".gblimi/objects/") + strlen(argv[2]) + 2);
-    //
-    // char dir[3] = {argv[2][0], argv[2][1], '\0'};
-    // snprintf(object_path, strlen(".gblimi/objects/") + strlen(argv[2]) + 2,
-    //          ".gblimi/objects/%s/%s", dir, argv[2] + 2);
-    //
-    // // Read the object
-    // FILE *object = fopen(object_path, "r");
-    // fseek(object, 0, SEEK_END);
-    // long size = ftell(object);
-    // fseek(object, 0, SEEK_SET);
-    // char *data = malloc(size);
-    // if (data)
-    //     fread(data, 1, size, object);
-    // fclose(object);
-    //
-    // // Decompress the object
-    // char *tree = malloc(size);
-    // uncompress((Bytef *)tree, (uLongf *)&size, (Bytef *)data, size);
-    //
-    // while (*tree != '\0')
-    //     tree++;
-    // tree++;
-    //
-    // struct git_tree_entry *entries = malloc(sizeof(struct git_tree_entry));
-    // size_t i = 0;
-    // while (tree[i] != '\0') {
-    //     tree[6] = '\0';
-    //     entries[i].mode = atoi(tree);
-    //     while (*tree != '\0')
-    //         tree++;
-    //     entries[i].path = ++tree;
-    //     tree += strlen(tree) + 1;
-    //     strncpy(entries[i].sha1, tree, 40);
-    //     tree += 42;
-    //     entries = realloc(entries, ++i * sizeof(struct git_tree_entry));
-    // }
-    // for (size_t j = 0; j < i; j++)
-    //     printf("%d %s\n", entries[j].mode, entries[j].path);
-    // while (*tree != '\0')
-    //     tree++;
-    // tree++;
-    // printf("%s\n", tree);
-    // while (*tree != '\0')
-    //     tree++;
-    // tree++;
-    // printf("%s\n", tree);
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
+        return 1;
+    }
 
-    // free(tree);
-    // free(data);
+    // Make the object path
+    char *object_path =
+        malloc(strlen(".gblimi/objects/") + strlen(argv[2]) + 2);
+
+    char dir[3] = {argv[2][0], argv[2][1], '\0'};
+    snprintf(object_path, strlen(".gblimi/objects/") + strlen(argv[2]) + 2,
+             ".gblimi/objects/%s/%s", dir, argv[2] + 2);
+
+    // Read the object
+    FILE *object = fopen(object_path, "r");
+    fseek(object, 0, SEEK_END);
+    long size = ftell(object);
+    fseek(object, 0, SEEK_SET);
+    char *data = malloc(size);
+    if (data)
+        fread(data, 1, size, object);
+    fclose(object);
+
+    // Decompress the object
+    char *tree = malloc(BUFSIZ);
+    size_t ucompSize = BUFSIZ;
+    uncompress((Bytef *)tree, (uLongf *)&ucompSize, (Bytef *)data, BUFSIZ);
+
+    size_t num_entries = 0;
+    for (size_t i = 10; i < ucompSize; i++)
+        if (tree[i] == '\0')
+            num_entries++;
+    num_entries = (num_entries + 1) / 2;
+
+    struct git_tree_entry entries[num_entries];
+
+    size_t entry_size = 0;
+    tree += 10;
+    for (size_t i = 0; i < num_entries; i++) {
+        entries[i].mode = atoi(tree + entry_size);
+
+        while (tree[entry_size] != ' ')
+            entry_size++;
+        entries[i].path = tree + entry_size + 1;
+
+        while (tree[entry_size] != '\0')
+            entry_size++;
+        strncpy(entries[i].sha1, tree + entry_size + 1, 40);
+        entries[i].sha1[40] = '\0';
+
+        entry_size += 42;
+    }
+
+    int longest_path = 0;
+    for (size_t i = 0; i < num_entries; i++)
+        if (strlen(entries[i].path) > longest_path)
+            longest_path = strlen(entries[i].path);
+
+    for (size_t i = 0; i < num_entries; i++)
+        printf("%d %*.*s %.40s\n", entries[i].mode, longest_path, longest_path,
+               entries[i].path, entries[i].sha1);
+
+    free(tree);
+    free(data);
 
     return 0;
 }
