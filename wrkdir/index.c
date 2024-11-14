@@ -104,8 +104,8 @@ void write_index_entry(FILE *fp, struct git_index_entry *entry) {
     write_uint32(fp, entry->mtime_nsec);
     write_uint32(fp, entry->dev);
     write_uint32(fp, entry->ino);
-    // TODO: use git modes instead of unix modes
-    // FIX: Maybe this will work
+
+    // HACK: This is ugly, but it works!
     if (entry->mode & S_IFDIR)
         write_uint32(fp, 40000);
     else if (entry->mode & S_IFREG)
@@ -114,6 +114,7 @@ void write_index_entry(FILE *fp, struct git_index_entry *entry) {
         write_uint32(fp, 100755);
     else if (entry->mode & S_IFLNK)
         write_uint32(fp, 120000);
+
     write_uint32(fp, entry->uid);
     write_uint32(fp, entry->gid);
     write_uint32(fp, entry->size);

@@ -263,15 +263,7 @@ int cat_file(int argc, char **argv) {
     return 0;
 }
 
-struct git_tree_entry *read_tree(char *tree) {
-    struct git_tree_header;
-    struct git_tree_entry *entries;
-
-    printf("%s\n", tree);
-
-    return entries;
-}
-
+// TODO: Add the last column to the output
 int ls_tree(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
@@ -301,14 +293,17 @@ int ls_tree(int argc, char **argv) {
     size_t ucompSize = BUFSIZ;
     uncompress((Bytef *)tree, (uLongf *)&ucompSize, (Bytef *)data, BUFSIZ);
 
+    // Count the number of entries by searching for the null terminator
     size_t num_entries = 0;
     for (size_t i = 10; i < ucompSize; i++)
         if (tree[i] == '\0')
             num_entries++;
+
+    // Account for the double null on all but the last entry
     num_entries = (num_entries + 1) / 2;
 
+    // Read the entries into the struct
     struct git_tree_entry entries[num_entries];
-
     size_t entry_size = 0;
     tree += 10;
     for (size_t i = 0; i < num_entries; i++) {
@@ -326,6 +321,7 @@ int ls_tree(int argc, char **argv) {
         entry_size += 42;
     }
 
+    // This is for formatting the output
     int longest_path = 0;
     for (size_t i = 0; i < num_entries; i++)
         if (strlen(entries[i].path) > longest_path)
@@ -335,7 +331,6 @@ int ls_tree(int argc, char **argv) {
         printf("%d %*.*s %.40s\n", entries[i].mode, longest_path, longest_path,
                entries[i].path, entries[i].sha1);
 
-    free(tree);
     free(data);
 
     return 0;
