@@ -112,27 +112,12 @@ void write_index_entry(FILE *fp, struct git_index_entry *entry) {
     write_uint32(fp, entry->dev);
     write_uint32(fp, entry->ino);
 
-    if (entry->mode == 40000) {
+    if (entry->mode == 40000)
         write_uint32(fp, 40000);
-    } else if (entry->mode == 100644) {
+    else if (entry->mode == 100644)
         write_uint32(fp, 100644);
-    } else if (entry->mode == 120000) {
+    else if (entry->mode == 120000)
         write_uint32(fp, 120000);
-    }
-    // HACK: This is ugly, but it works!
-    // if (entry->mode & S_IFDIR) {
-    //     printf("Dir\n");
-    //     write_uint32(fp, 40000);
-    // } else if (entry->mode & S_IFREG) {
-    //     printf("File\n");
-    //     write_uint32(fp, 100644);
-    // } else if (entry->mode & (S_IRWXU | S_IRWXG | S_IRWXO)) {
-    //     printf("File\n");
-    //     write_uint32(fp, 100755);
-    // } else if (entry->mode & S_IFLNK) {
-    //     printf("Symlink\n");
-    //     write_uint32(fp, 120000);
-    // }
 
     write_uint32(fp, entry->uid);
     write_uint32(fp, entry->gid);
