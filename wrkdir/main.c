@@ -153,6 +153,20 @@ int search_index(struct git_index_header header,
     return 0;
 }
 
+void sort_entries(struct git_index_entry *entries, size_t num_entries) {
+    // This is a bubble sort, but it's fine since the number of entries is
+    // probably small
+    for (size_t i = 0; i < num_entries; i++) {
+        for (size_t j = i + 1; j < num_entries; j++) {
+            if (strcmp(entries[i].path, entries[j].path) > 0) {
+                struct git_index_entry temp = entries[i];
+                entries[i] = entries[j];
+                entries[j] = temp;
+            }
+        }
+    }
+}
+
 int update_index(int argc, char **argv) {
     if (argc < 4) {
         fprintf(stderr, "Usage: %s update-index [--add | --remove] <path>\n",
@@ -188,6 +202,8 @@ int update_index(int argc, char **argv) {
                               header.entries * sizeof(struct git_index_entry));
         }
     }
+
+    sort_entries(entries, header.entries);
 
     FILE *fp = fopen(".gblimi/index", "wb+");
     if (!fp)
@@ -225,28 +241,22 @@ int ls_files(int argc, char **argv) {
     return 0;
 }
 
-int cat_file(int argc, char **argv) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s cat-file <hash>\n", argv[0]);
-        return 1;
-    }
-
+char *retrieve_object(char *hash, size_t *size) {
     // Make the object path
-    char *object_path =
-        malloc(strlen(".gblimi/objects/") + strlen(argv[2]) + 2);
+    char *object_path = malloc(strlen(".gblimi/objects/") + strlen(hash) + 2);
 
-    char dir[3] = {argv[2][0], argv[2][1], '\0'};
-    snprintf(object_path, strlen(".gblimi/objects/") + strlen(argv[2]) + 2,
-             ".gblimi/objects/%s/%s", dir, argv[2] + 2);
+    char dir[3] = {hash[0], hash[1], '\0'};
+    snprintf(object_path, strlen(".gblimi/objects/") + strlen(hash) + 2,
+             ".gblimi/objects/%s/%s", dir, hash + 2);
 
     // Read the object
     FILE *object = fopen(object_path, "r");
     fseek(object, 0, SEEK_END);
-    long size = ftell(object);
+    *size = ftell(object);
     fseek(object, 0, SEEK_SET);
-    char *data = malloc(size);
+    char *data = malloc(*size);
     if (data)
-        fread(data, 1, size, object);
+        fread(data, 1, *size, object);
     fclose(object);
 
     // Decompress the object
@@ -254,12 +264,24 @@ int cat_file(int argc, char **argv) {
     char *blob = malloc(ucompSize);
     uncompress((Bytef *)blob, (uLongf *)&ucompSize, (Bytef *)data, ucompSize);
 
-    // Print the blob
+    free(object_path);
+    free(data);
+
+    return blob;
+}
+
+int cat_file(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s cat-file <hash>\n", argv[0]);
+        return 1;
+    }
+
+    size_t ucompSize = 4096;
+    char *blob = retrieve_object(argv[2], &ucompSize);
+
     printf("%s\n", blob + 10);
 
-    free(object_path);
     free(blob);
-    free(data);
 
     return 0;
 }
@@ -270,28 +292,8 @@ int ls_tree(int argc, char **argv) {
         return 1;
     }
 
-    // Make the object path
-    char *object_path =
-        malloc(strlen(".gblimi/objects/") + strlen(argv[2]) + 2);
-
-    char dir[3] = {argv[2][0], argv[2][1], '\0'};
-    snprintf(object_path, strlen(".gblimi/objects/") + strlen(argv[2]) + 2,
-             ".gblimi/objects/%s/%s", dir, argv[2] + 2);
-
-    // Read the object
-    FILE *object = fopen(object_path, "r");
-    fseek(object, 0, SEEK_END);
-    long size = ftell(object);
-    fseek(object, 0, SEEK_SET);
-    char *data = malloc(size);
-    if (data)
-        fread(data, 1, size, object);
-    fclose(object);
-
-    // Decompress the object
-    char *tree = malloc(BUFSIZ);
-    size_t ucompSize = BUFSIZ;
-    uncompress((Bytef *)tree, (uLongf *)&ucompSize, (Bytef *)data, BUFSIZ);
+    size_t ucompSize = 4096;
+    char *tree = retrieve_object(argv[2], &ucompSize);
 
     int header_end = 0;
     while (tree[header_end] != '\0')
@@ -336,7 +338,7 @@ int ls_tree(int argc, char **argv) {
                entries[i].mode / 100000 == 0 ? "tree" : "blob", entries[i].sha1,
                entries[i].path);
 
-    free(data);
+    // free(data);
 
     return 0;
 }
