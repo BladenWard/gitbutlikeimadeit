@@ -265,6 +265,7 @@ char *retrieve_object(char *hash, size_t *size) {
     size_t ucompSize = 4096;
     char *blob = malloc(ucompSize);
     uncompress((Bytef *)blob, (uLongf *)&ucompSize, (Bytef *)data, ucompSize);
+    *size = ucompSize;
 
     free(object_path);
     free(data);
