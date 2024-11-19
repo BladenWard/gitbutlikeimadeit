@@ -81,8 +81,13 @@ int ls_files(int argc, char **argv) {
     read_index(&header, &entries);
 
     if (argc > 2 && strcmp(argv[2], "--log") == 0) {
+        int longest = 0;
+        for (size_t i = 0; i < header.entries; i++)
+            if (strlen(entries[i].path) > longest)
+                longest = strlen(entries[i].path);
+
         for (size_t i = 0; i < header.entries; i++) {
-            printf("%s mode: %u size: %u sha1: ", entries[i].path,
+            printf("%-*.*s %.6u %5uB ", longest, longest, entries[i].path,
                    entries[i].mode, entries[i].size);
             for (int j = 0; j < 20; j++)
                 printf("%02x", entries[i].sha1[j]);

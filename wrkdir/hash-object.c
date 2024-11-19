@@ -16,21 +16,18 @@ int hash_object(int argc, char **argv) {
 
     char *hash = create_object_hash(blob, ucompSize);
 
-    if (argc > 3) {
-        if (strcmp(argv[2], "-w") == 0) {
-            size_t compressed_size;
-            char *compressed =
-                compress_object(blob, ucompSize, &compressed_size);
+    if (argc > 3 && strcmp(argv[2], "-w") == 0) {
+        size_t compressed_size;
+        char *compressed = compress_object(blob, ucompSize, &compressed_size);
 
-            char *object_path = create_object_store(hash);
+        char *object_path = create_object_store(hash);
 
-            FILE *object = fopen(object_path, "w");
-            fwrite(compressed, 1, compressed_size, object);
-            fclose(object);
+        FILE *object = fopen(object_path, "w");
+        fwrite(compressed, 1, compressed_size, object);
+        fclose(object);
 
-            free(compressed);
-            free(object_path);
-        }
+        free(compressed);
+        free(object_path);
     }
 
     printf("%s\n", hash);
