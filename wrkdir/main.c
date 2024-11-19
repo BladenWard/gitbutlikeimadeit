@@ -55,18 +55,17 @@ int init() {
     return 0;
 }
 
-int write_tree(int argc, char **argv) {
-    struct git_index_header header;
-    struct git_index_entry *entries;
-    read_index(&header, &entries);
-
-    size_t content_size = 0;
+struct git_tree_entry *prep_tree_entries(struct git_index_header header,
+                                         struct git_index_entry *entries,
+                                         size_t *size) {
+    *size = 0;
     struct stat file_stat;
     for (size_t i = 0; i < header.entries; i++)
         if (stat(entries[i].path, &file_stat) == 0)
-            content_size += file_stat.st_size;
+            *size += file_stat.st_size;
 
-    struct git_tree_entry tree_entries[header.entries];
+    struct git_tree_entry *tree_entries =
+        malloc(header.entries * sizeof(struct git_tree_entry));
 
     for (size_t i = 0; i < header.entries; i++) {
         tree_entries[i].mode = entries[i].mode;
@@ -76,6 +75,12 @@ int write_tree(int argc, char **argv) {
                      entries[i].sha1[j]);
     }
 
+    return tree_entries;
+}
+
+char *create_tree(size_t *size, struct git_tree_entry *tree_entries,
+                  struct git_index_header header,
+                  struct git_index_entry *entries) {
     int header_offset = 4 + 1 + 4 + 1;
     size_t ucompSize = 0;
 
@@ -84,7 +89,7 @@ int write_tree(int argc, char **argv) {
         ucompSize += 4 + 1 + entries[i].flags + 1 + 43;
 
     char *tree = malloc(ucompSize * sizeof(char));
-    sprintf(tree, "tree %zu%c", content_size, '\0');
+    sprintf(tree, "tree %zu%c", *size, '\0');
 
     size_t entry_size = 0;
     for (size_t i = 0; i < header.entries; i++) {
@@ -93,42 +98,73 @@ int write_tree(int argc, char **argv) {
                 tree_entries[i].sha1);
         entry_size += 4 + 1 + entries[i].flags + 1 + 43;
     }
+    *size = ucompSize;
 
-    // Hash the tree
-    // TODO: Move stuff like this to a function
+    return tree;
+}
+
+char *create_object_store(char *hash) {
+    char dir[3] = {hash[0], hash[1], '\0'};
+    char *tree_path = malloc(16 + 2 + 1 + strlen(hash + 2) * sizeof(char));
+
+    snprintf(tree_path,
+             strlen(".gblimi/objects/") + strlen(dir) + 1 + strlen(hash + 2) +
+                 1,
+             ".gblimi/objects/%s/%s", dir, hash + 2);
+
+    tree_path[18] = '\0';
+    mkdir(tree_path, 0777);
+    tree_path[18] = '/';
+
+    return tree_path;
+}
+
+char *hash_tree(char *tree, size_t size) {
     unsigned char hash[20];
-    SHA1((unsigned char *)tree, ucompSize, hash);
+    SHA1((unsigned char *)tree, size, hash);
     char *hash_str = malloc(41);
     for (int i = 0; i < 20; i++)
         sprintf(hash_str + i * 2, "%02x", hash[i]);
 
-    // Create the tree path
-    char dir[3] = {hash_str[0], hash_str[1], '\0'};
-    char *tree_path = malloc(16 + 2 + 1 + strlen(hash_str + 2) * sizeof(char));
+    return hash_str;
+}
 
-    snprintf(tree_path,
-             strlen(".gblimi/objects/") + strlen(dir) + 1 +
-                 strlen(hash_str + 2) + 1,
-             ".gblimi/objects/%s/%s", dir, hash_str + 2);
+char *compress_tree(char *tree, size_t size, size_t *compressed_size) {
+    *compressed_size = compressBound(size);
+    char *compressed = malloc(*compressed_size);
+    compress((Bytef *)compressed, compressed_size, (Bytef *)tree, size);
 
-    tree_path[18] = '\0';
-    mkdir(tree_path, 0777);
+    return compressed;
+}
 
-    // Compress the blob
-    unsigned long compressed_size = compressBound(ucompSize);
-    char *compressed = malloc(compressed_size);
-    compress((Bytef *)compressed, &compressed_size, (Bytef *)tree, ucompSize);
+int write_tree(int argc, char **argv) {
+    struct git_index_header header;
+    struct git_index_entry *entries;
+    read_index(&header, &entries);
+
+    size_t content_size;
+    struct git_tree_entry *tree_entries =
+        prep_tree_entries(header, entries, &content_size);
+
+    char *tree = create_tree(&content_size, tree_entries, header, entries);
+    free(entries);
+
+    char *hash = hash_tree(tree, content_size);
+
+    size_t compressed_size;
+    char *compressed = compress_tree(tree, content_size, &compressed_size);
+
+    char *tree_path = create_object_store(hash);
 
     // Write the tree
-    tree_path[18] = '/';
     FILE *object = fopen(tree_path, "w");
     fwrite(compressed, 1, compressed_size, object);
-    printf("%s\n", hash_str);
+    fclose(object);
+    printf("%s\n", hash);
 
     free(compressed);
     free(tree);
     free(tree_path);
-    free(entries);
 
     return 0;
 }
@@ -141,7 +177,6 @@ int search_index(struct git_index_header header,
         return 1;
     }
 
-    int modified = 0;
     for (int i = 0; i < header.entries; i++) {
         if (strcmp(entries[i].path, path) == 0) {
             *found = i + 1;
@@ -183,7 +218,7 @@ int update_index(int argc, char **argv) {
     struct git_index_header header;
     struct git_index_entry *entries;
 
-    int file_code = read_index(&header, &entries);
+    read_index(&header, &entries);
 
     struct stat file_stat;
     int found;
@@ -212,6 +247,7 @@ int update_index(int argc, char **argv) {
         perror("Failed to open index file");
 
     write_index(fp, header, entries);
+    fclose(fp);
 
     free(entries);
 
@@ -262,7 +298,7 @@ char *retrieve_object(char *hash, size_t *size) {
     fclose(object);
 
     // Decompress the object
-    size_t ucompSize = 4096;
+    size_t ucompSize = 8192;
     char *blob = malloc(ucompSize);
     uncompress((Bytef *)blob, (uLongf *)&ucompSize, (Bytef *)data, ucompSize);
     *size = ucompSize;
@@ -273,13 +309,16 @@ char *retrieve_object(char *hash, size_t *size) {
     return blob;
 }
 
+// FIX: Long files are not being read correctly
+// so Ill need to figure out how to read the file
+// in chunks
 int cat_file(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s cat-file <hash>\n", argv[0]);
         return 1;
     }
 
-    size_t ucompSize = 4096;
+    size_t ucompSize = 8192;
     char *blob = retrieve_object(argv[2], &ucompSize);
 
     printf("%s\n", blob + 10);
@@ -298,6 +337,7 @@ int ls_tree(int argc, char **argv) {
     size_t ucompSize = 4096;
     char *tree = retrieve_object(argv[2], &ucompSize);
 
+    // Skip the header
     int header_end = 0;
     while (tree[header_end] != '\0')
         header_end++;
