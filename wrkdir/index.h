@@ -47,4 +47,12 @@ void write_index(FILE *fp, struct git_index_header header,
 int read_index(struct git_index_header *header,
                struct git_index_entry **entries);
 
+int search_index(struct git_index_header header,
+                 struct git_index_entry *entries, struct stat *file_stat,
+                 char *path, int *found);
+
+void sort_entries(struct git_index_entry *entries, size_t num_entries);
+
+int update_index(int argc, char **argv);
+
 #endif

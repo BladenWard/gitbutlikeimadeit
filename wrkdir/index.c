@@ -2,6 +2,91 @@
 #include "blob.h"
 #include "uint-util.h"
 
+int search_index(struct git_index_header header,
+                 struct git_index_entry *entries, struct stat *file_stat,
+                 char *path, int *found) {
+    if (stat(path, file_stat) != 0) {
+        perror("Failed to get file stats");
+        return 1;
+    }
+
+    for (int i = 0; i < header.entries; i++) {
+        if (strcmp(entries[i].path, path) == 0) {
+            *found = i + 1;
+            if (entries[i].mtime_sec < file_stat->st_mtime)
+                return 1;
+        }
+    }
+
+    return 0;
+}
+
+void sort_entries(struct git_index_entry *entries, size_t num_entries) {
+    // This is a bubble sort, but it's fine since the number of entries is
+    // probably small
+    for (size_t i = 0; i < num_entries; i++) {
+        for (size_t j = i + 1; j < num_entries; j++) {
+            if (strcmp(entries[i].path, entries[j].path) > 0) {
+                struct git_index_entry temp = entries[i];
+                entries[i] = entries[j];
+                entries[j] = temp;
+            }
+        }
+    }
+}
+
+// TODO: Orgainze these function into separate files and factor out the reused
+// parts
+int update_index(int argc, char **argv) {
+    if (argc < 4) {
+        fprintf(stderr, "Usage: %s update-index [--add | --remove] <path>\n",
+                argv[0]);
+        return 1;
+    }
+
+    size_t path_len = strlen(argv[3]);
+    if (argv[3][path_len - 1] == '/')
+        argv[3][path_len - 1] = '\0';
+
+    struct git_index_header header;
+    struct git_index_entry *entries;
+
+    read_index(&header, &entries);
+
+    struct stat file_stat;
+    int found;
+    int modified = search_index(header, entries, &file_stat, argv[3], &found);
+
+    if (strcmp(argv[2], "--add") == 0) {
+        if (found && modified) {
+            prep_index_entry(&entries[--found], &file_stat, argv[3]);
+        } else if (!found) {
+            entries = realloc(entries, ++header.entries *
+                                           sizeof(struct git_index_entry));
+            prep_index_entry(&entries[header.entries - 1], &file_stat, argv[3]);
+        }
+    } else if (strcmp(argv[2], "--remove") == 0) {
+        if (found--) {
+            entries[found] = entries[--header.entries];
+            entries = realloc(entries,
+                              header.entries * sizeof(struct git_index_entry));
+        }
+    }
+
+    sort_entries(entries, header.entries);
+
+    FILE *fp = fopen(".gblimi/index", "wb+");
+    if (!fp)
+        perror("Failed to open index file");
+
+    write_index(fp, header, entries);
+    fclose(fp);
+
+    free(entries);
+
+    return 0;
+}
+
 // Function to read and parse the index file
 int read_index(struct git_index_header *header,
                struct git_index_entry **entries) {
