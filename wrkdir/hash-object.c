@@ -46,7 +46,6 @@ int hash_object(int argc, char **argv) {
             object_path[18] = '/';
             FILE *object = fopen(object_path, "w");
             fwrite(compressed, 1, compressed_size, object);
-            printf("Created object path: %s\n", object_path);
 
             fclose(object);
             free(compressed);

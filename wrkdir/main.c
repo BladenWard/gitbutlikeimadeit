@@ -153,7 +153,6 @@ int search_index(struct git_index_header header,
     return 0;
 }
 
-// BUG: Dirs only work if they are added twice
 int update_index(int argc, char **argv) {
     if (argc < 4) {
         fprintf(stderr, "Usage: %s update-index [--add | --remove] <path>\n",
@@ -251,8 +250,9 @@ int cat_file(int argc, char **argv) {
     fclose(object);
 
     // Decompress the object
-    char *blob = malloc(size);
-    uncompress((Bytef *)blob, (uLongf *)&size, (Bytef *)data, size);
+    size_t ucompSize = 4096;
+    char *blob = malloc(ucompSize);
+    uncompress((Bytef *)blob, (uLongf *)&ucompSize, (Bytef *)data, ucompSize);
 
     // Print the blob
     printf("%s\n", blob + 10);
