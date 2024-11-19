@@ -17,7 +17,7 @@
 // - ~hash-object~
 // - log
 // - ~ls-files~
-// - ls-tree
+// - ~ls-tree~
 // - rev-parse
 // - rm
 // - show-ref
@@ -167,6 +167,8 @@ void sort_entries(struct git_index_entry *entries, size_t num_entries) {
     }
 }
 
+// TODO: Orgainze these function into separate files and factor out the reused
+// parts
 int update_index(int argc, char **argv) {
     if (argc < 4) {
         fprintf(stderr, "Usage: %s update-index [--add | --remove] <path>\n",
