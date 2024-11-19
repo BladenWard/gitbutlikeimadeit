@@ -19,9 +19,9 @@ char *create_tree(size_t *size, struct git_tree_entry *tree_entries,
                   struct git_index_header header,
                   struct git_index_entry *entries);
 
-char *hash_tree(char *tree, size_t size);
+char *create_object_hash(char *data, size_t size);
 
-char *compress_tree(char *tree, size_t size, size_t *compressed_size);
+char *compress_object(char *tree, size_t size, size_t *compressed_size);
 
 int write_tree(int argc, char **argv);
 

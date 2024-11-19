@@ -74,7 +74,7 @@ char *create_object_store(char *hash) {
     return tree_path;
 }
 
-char *hash_tree(char *tree, size_t size) {
+char *create_object_hash(char *tree, size_t size) {
     unsigned char hash[20];
     SHA1((unsigned char *)tree, size, hash);
     char *hash_str = malloc(41);
@@ -84,10 +84,10 @@ char *hash_tree(char *tree, size_t size) {
     return hash_str;
 }
 
-char *compress_tree(char *tree, size_t size, size_t *compressed_size) {
+char *compress_object(char *data, size_t size, size_t *compressed_size) {
     *compressed_size = compressBound(size);
     char *compressed = malloc(*compressed_size);
-    compress((Bytef *)compressed, compressed_size, (Bytef *)tree, size);
+    compress((Bytef *)compressed, compressed_size, (Bytef *)data, size);
 
     return compressed;
 }
@@ -104,10 +104,10 @@ int write_tree(int argc, char **argv) {
     char *tree = create_tree(&content_size, tree_entries, header, entries);
     free(entries);
 
-    char *hash = hash_tree(tree, content_size);
+    char *hash = create_object_hash(tree, content_size);
 
     size_t compressed_size;
-    char *compressed = compress_tree(tree, content_size, &compressed_size);
+    char *compressed = compress_object(tree, content_size, &compressed_size);
 
     char *tree_path = create_object_store(hash);
 
