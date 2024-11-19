@@ -153,6 +153,7 @@ int search_index(struct git_index_header header,
     return 0;
 }
 
+// BUG: Dirs only work if they are added twice
 int update_index(int argc, char **argv) {
     if (argc < 4) {
         fprintf(stderr, "Usage: %s update-index [--add | --remove] <path>\n",
@@ -263,7 +264,6 @@ int cat_file(int argc, char **argv) {
     return 0;
 }
 
-// TODO: Add the last column to the output
 int ls_tree(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
@@ -293,9 +293,15 @@ int ls_tree(int argc, char **argv) {
     size_t ucompSize = BUFSIZ;
     uncompress((Bytef *)tree, (uLongf *)&ucompSize, (Bytef *)data, BUFSIZ);
 
+    int header_end = 0;
+    while (tree[header_end] != '\0')
+        header_end++;
+    while (tree[header_end] == '\0')
+        header_end++;
+
     // Count the number of entries by searching for the null terminator
     size_t num_entries = 0;
-    for (size_t i = 10; i < ucompSize; i++)
+    for (size_t i = header_end; i < ucompSize - 1; i++)
         if (tree[i] == '\0')
             num_entries++;
 
@@ -305,8 +311,12 @@ int ls_tree(int argc, char **argv) {
     // Read the entries into the struct
     struct git_tree_entry entries[num_entries];
     size_t entry_size = 0;
-    tree += 10;
+    tree += header_end;
     for (size_t i = 0; i < num_entries; i++) {
+        int entry_padding = 0;
+        if (tree[entry_size] == '4')
+            entry_padding = 1;
+
         entries[i].mode = atoi(tree + entry_size);
 
         while (tree[entry_size] != ' ')
@@ -318,18 +328,13 @@ int ls_tree(int argc, char **argv) {
         strncpy(entries[i].sha1, tree + entry_size + 1, 40);
         entries[i].sha1[40] = '\0';
 
-        entry_size += 42;
+        entry_size += 42 + entry_padding;
     }
 
-    // This is for formatting the output
-    int longest_path = 0;
     for (size_t i = 0; i < num_entries; i++)
-        if (strlen(entries[i].path) > longest_path)
-            longest_path = strlen(entries[i].path);
-
-    for (size_t i = 0; i < num_entries; i++)
-        printf("%d %*.*s %.40s\n", entries[i].mode, longest_path, longest_path,
-               entries[i].path, entries[i].sha1);
+        printf("%.6d %s %.40s\t%s\n", entries[i].mode,
+               entries[i].mode / 100000 == 0 ? "tree" : "blob", entries[i].sha1,
+               entries[i].path);
 
     free(data);
 

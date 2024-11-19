@@ -77,7 +77,14 @@ void prep_index_entry(struct git_index_entry *entry, struct stat *file_stat,
     entry->mtime_nsec = (uint32_t)file_stat->st_mtimespec.tv_nsec;
     entry->dev = (uint32_t)file_stat->st_dev;
     entry->ino = (uint32_t)file_stat->st_ino;
-    entry->mode = (uint32_t)file_stat->st_mode;
+    if (S_ISDIR(file_stat->st_mode)) {
+        entry->mode = 40000;
+    } else if (S_ISREG(file_stat->st_mode)) {
+        entry->mode = 100644;
+    } else if (S_ISLNK(file_stat->st_mode)) {
+        entry->mode = 120000;
+    }
+    // entry->mode = (uint32_t)file_stat->st_mode;
     entry->uid = (uint32_t)file_stat->st_uid;
     entry->gid = (uint32_t)file_stat->st_gid;
     entry->size = (uint32_t)file_stat->st_size;
@@ -105,15 +112,27 @@ void write_index_entry(FILE *fp, struct git_index_entry *entry) {
     write_uint32(fp, entry->dev);
     write_uint32(fp, entry->ino);
 
-    // HACK: This is ugly, but it works!
-    if (entry->mode & S_IFDIR)
+    if (entry->mode == 40000) {
         write_uint32(fp, 40000);
-    else if (entry->mode & S_IFREG)
+    } else if (entry->mode == 100644) {
         write_uint32(fp, 100644);
-    else if (entry->mode & (S_IRWXU | S_IRWXG | S_IRWXO))
-        write_uint32(fp, 100755);
-    else if (entry->mode & S_IFLNK)
+    } else if (entry->mode == 120000) {
         write_uint32(fp, 120000);
+    }
+    // HACK: This is ugly, but it works!
+    // if (entry->mode & S_IFDIR) {
+    //     printf("Dir\n");
+    //     write_uint32(fp, 40000);
+    // } else if (entry->mode & S_IFREG) {
+    //     printf("File\n");
+    //     write_uint32(fp, 100644);
+    // } else if (entry->mode & (S_IRWXU | S_IRWXG | S_IRWXO)) {
+    //     printf("File\n");
+    //     write_uint32(fp, 100755);
+    // } else if (entry->mode & S_IFLNK) {
+    //     printf("Symlink\n");
+    //     write_uint32(fp, 120000);
+    // }
 
     write_uint32(fp, entry->uid);
     write_uint32(fp, entry->gid);
