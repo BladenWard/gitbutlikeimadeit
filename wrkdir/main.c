@@ -14,6 +14,7 @@
 // - add
 // - commit
 // - checkout
+// - config
 // - check-ignore
 // - ~hash-object~
 // - log
@@ -34,7 +35,7 @@
 #define WHT "\x1B[37m"
 #define RESET "\x1B[0m"
 
-int init() {
+int init(void) {
     mkdir(".gblimi", 0777);
     mkdir(".gblimi/objects", 0777);
     mkdir(".gblimi/refs", 0777);
@@ -83,7 +84,7 @@ int ls_files(int argc, char **argv) {
     if (argc > 2 && strcmp(argv[2], "--log") == 0) {
         int longest = 0;
         for (size_t i = 0; i < header.entries; i++)
-            if (strlen(entries[i].path) > longest)
+            if (strlen(entries[i].path) > (size_t)longest)
                 longest = strlen(entries[i].path);
 
         for (size_t i = 0; i < header.entries; i++) {
@@ -178,6 +179,19 @@ int ls_tree(int argc, char **argv) {
     return 0;
 }
 
+int config(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s config <key>\n", argv[0]);
+        return 1;
+    }
+
+    if (strcmp(argv[2], "set") == 0) {
+        printf("Config\n");
+    }
+
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
@@ -195,7 +209,7 @@ int main(int argc, char **argv) {
 
     } else if (strcmp(cmd, "write-tree") == 0) {
 
-        return write_tree(argc, argv);
+        return write_tree();
 
     } else if (strcmp(cmd, "update-index") == 0) {
 
@@ -212,6 +226,10 @@ int main(int argc, char **argv) {
     } else if (strcmp(cmd, "cat-file") == 0) {
 
         return cat_file(argc, argv);
+
+    } else if (strcmp(cmd, "config") == 0) {
+
+        return config(argc, argv);
 
     } else {
 

@@ -23,7 +23,7 @@ char *create_object_hash(char *data, size_t size);
 
 char *compress_object(char *tree, size_t size, size_t *compressed_size);
 
-int write_tree(int argc, char **argv);
+int write_tree(void);
 
 char *create_object_store(char *hash);
 

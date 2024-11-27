@@ -92,7 +92,7 @@ char *compress_object(char *data, size_t size, size_t *compressed_size) {
     return compressed;
 }
 
-int write_tree(int argc, char **argv) {
+int write_tree(void) {
     struct git_index_header header;
     struct git_index_entry *entries;
     read_index(&header, &entries);

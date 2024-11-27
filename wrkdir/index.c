@@ -10,7 +10,7 @@ int search_index(struct git_index_header header,
         return 1;
     }
 
-    for (int i = 0; i < header.entries; i++) {
+    for (uint32_t i = 0; i < header.entries; i++) {
         if (strcmp(entries[i].path, path) == 0) {
             *found = i + 1;
             if (entries[i].mtime_sec < file_stat->st_mtime)
