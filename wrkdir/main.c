@@ -1,4 +1,5 @@
 #include <openssl/sha.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -179,6 +180,38 @@ int ls_tree(int argc, char **argv) {
     return 0;
 }
 
+struct config {
+    char *name;
+    char *email;
+};
+
+void read_config(struct config *config) {
+    FILE *config_file = fopen(".gblimi/config", "r");
+    char *config_str = malloc(1000);
+    fread(config_str, 1, 1000, config_file);
+
+    int i = 0;
+    while (config_str[i] != '\0') {
+        if (config_str[i] == '\n')
+            config_str[i] = '\0';
+        i++;
+    }
+
+    char *name = config_str + 7;
+    char *email = config_str + 8 + strlen(name) + 8;
+    config->name = name;
+    config->email = email;
+
+    fclose(config_file);
+    free(config_str);
+}
+
+void write_config(struct config *config) {
+    FILE *config_file = fopen(".gblimi/config", "w");
+    fprintf(config_file, "name = %s\nemail = %s", config->name, config->email);
+    fclose(config_file);
+}
+
 int config(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s config <key>\n", argv[0]);
@@ -186,10 +219,36 @@ int config(int argc, char **argv) {
     }
 
     if (strcmp(argv[2], "set") == 0) {
-        printf("Config\n");
-    }
+        if (argc < 4) {
+            fprintf(stderr, "Usage: %s %s %s <name> <value>\n", argv[0],
+                    argv[1], argv[2]);
+            return 1;
+        }
 
-    return 0;
+        struct config config;
+        read_config(&config);
+
+        if (!strcmp(argv[3], "name")) {
+            if (config.name != NULL)
+                config.name = argv[4];
+
+        } else if (!strcmp(argv[3], "email")) {
+            if (config.email != NULL)
+                config.email = argv[4];
+
+        } else {
+            fprintf(stderr, "Cannot set %s\n", config.name);
+            return 1;
+        }
+
+        write_config(&config);
+
+        return 0;
+
+    } else {
+        fprintf(stderr, "Unknown command: %s\n", argv[2]);
+        return 1;
+    }
 }
 
 int main(int argc, char **argv) {
