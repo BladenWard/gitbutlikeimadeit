@@ -181,8 +181,8 @@ int ls_tree(int argc, char **argv) {
 }
 
 struct config {
-    char *name;
-    char *email;
+    char name[30];
+    char email[40];
 };
 
 void read_config(struct config *config) {
@@ -199,8 +199,10 @@ void read_config(struct config *config) {
 
     char *name = config_str + 7;
     char *email = config_str + 8 + strlen(name) + 8;
-    config->name = name;
-    config->email = email;
+    // config->name = name;
+    // config->email = email;
+    strncpy(config->name, name, 30);
+    strncpy(config->email, email, 40);
 
     fclose(config_file);
     free(config_str);
@@ -225,23 +227,43 @@ int config(int argc, char **argv) {
             return 1;
         }
 
+        struct config *config;
+        config = malloc(sizeof(struct config));
+        read_config(config);
+
+        if (!strcmp(argv[3], "name")) {
+            strncpy(config->name, argv[4], 30);
+        } else if (!strcmp(argv[3], "email")) {
+            strncpy(config->email, argv[4], 40);
+        } else {
+            fprintf(stderr, "Cannot set %s\n", config->name);
+            return 1;
+        }
+
+        write_config(config);
+
+        free(config);
+
+        return 0;
+
+    } else if (strcmp(argv[2], "get") == 0) {
+
+        if (argc < 3) {
+            fprintf(stderr, "Usage: %s get <name>\n", argv[0]);
+            return 1;
+        }
+
         struct config config;
         read_config(&config);
 
         if (!strcmp(argv[3], "name")) {
-            if (config.name != NULL)
-                config.name = argv[4];
-
+            printf("%s\n", config.name);
         } else if (!strcmp(argv[3], "email")) {
-            if (config.email != NULL)
-                config.email = argv[4];
-
+            printf("%s\n", config.email);
         } else {
-            fprintf(stderr, "Cannot set %s\n", config.name);
+            fprintf(stderr, "Cannot get %s\n", argv[3]);
             return 1;
         }
-
-        write_config(&config);
 
         return 0;
 
