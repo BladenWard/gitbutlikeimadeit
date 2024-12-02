@@ -79,28 +79,13 @@ char *retrieve_object(char *hash, size_t *size) {
     return blob;
 }
 
-int ls_files(int argc, char **argv) {
+int ls_files(void) {
     struct git_index_header header;
     struct git_index_entry *entries;
     read_index(&header, &entries);
 
-    if (argc > 2 && strcmp(argv[2], "--log") == 0) {
-        int longest = 0;
-        for (size_t i = 0; i < header.entries; i++)
-            if (strlen(entries[i].path) > (size_t)longest)
-                longest = strlen(entries[i].path);
-
-        for (size_t i = 0; i < header.entries; i++) {
-            printf("%-*.*s %.6u %5uB ", longest, longest, entries[i].path,
-                   entries[i].mode, entries[i].size);
-            for (int j = 0; j < 20; j++)
-                printf("%02x", entries[i].sha1[j]);
-            printf("\n");
-        }
-    } else {
-        for (size_t i = 0; i < header.entries; i++)
-            printf("%s\n", entries[i].path);
-    }
+    for (size_t i = 0; i < header.entries; i++)
+        printf("%s\n", entries[i].path);
 
     free(entries);
 
@@ -129,11 +114,6 @@ int cat_file(char *object_hash) {
 }
 
 int ls_tree(char *tree_hash) {
-    // if (argc < 3) {
-    //     fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
-    //     return 1;
-    // }
-
     size_t ucompSize = 4096;
     char *tree = retrieve_object(tree_hash, &ucompSize);
 
@@ -203,8 +183,6 @@ void read_config(struct config *config) {
 
     char *name = config_str + 7;
     char *email = config_str + 8 + strlen(name) + 8;
-    // config->name = name;
-    // config->email = email;
     strncpy(config->name, name, 30);
     strncpy(config->email, email, 40);
 
@@ -277,14 +255,15 @@ int config(int argc, char **argv) {
     }
 }
 
-int commit_tree(int argc, char **argv) {
+void handle_commit_tree_opts(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s commit-tree <hash>\n", argv[0]);
-        return 1;
+        exit(1);
     }
+}
 
-    printf("commit-tree %s\n", argv[2]);
-
+int commit_tree(char *tree_hash) {
+    printf("commit-tree %s\n", tree_hash);
     return 0;
 }
 
@@ -358,7 +337,7 @@ int main(int argc, char **argv) {
 
     } else if (strcmp(cmd, "ls-files") == 0) {
 
-        return ls_files(argc, argv);
+        return ls_files();
 
     } else if (strcmp(cmd, "ls-tree") == 0) {
 
@@ -372,7 +351,8 @@ int main(int argc, char **argv) {
 
     } else if (strcmp(cmd, "commit-tree") == 0) {
 
-        return commit_tree(argc, argv);
+        handle_commit_tree_opts(argc, argv);
+        return commit_tree(argv[2]);
 
     } else if (strcmp(cmd, "config") == 0) {
 
