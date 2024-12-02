@@ -14,6 +14,7 @@
 // - ~cat-file~
 // - add
 // - commit
+// - commit-tree
 // - checkout
 // - config
 // - check-ignore
@@ -273,6 +274,17 @@ int config(int argc, char **argv) {
     }
 }
 
+int commit_tree(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s commit-tree <hash>\n", argv[0]);
+        return 1;
+    }
+
+    printf("commit-tree %s\n", argv[2]);
+
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
@@ -307,6 +319,10 @@ int main(int argc, char **argv) {
     } else if (strcmp(cmd, "cat-file") == 0) {
 
         return cat_file(argc, argv);
+
+    } else if (strcmp(cmd, "commit-tree") == 0) {
+
+        return commit_tree(argc, argv);
 
     } else if (strcmp(cmd, "config") == 0) {
 
