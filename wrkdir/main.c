@@ -107,17 +107,19 @@ int ls_files(int argc, char **argv) {
     return 0;
 }
 
+void handle_cat_file_opts(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s cat-file <hash>\n", argv[0]);
+        exit(1);
+    }
+}
+
 // FIX: Long files are not being read correctly
 // so Ill need to figure out how to read the file
 // in chunks
-int cat_file(int argc, char **argv) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s cat-file <hash>\n", argv[0]);
-        return 1;
-    }
-
+int cat_file(char *object_hash) {
     size_t ucompSize = 8192;
-    char *blob = retrieve_object(argv[2], &ucompSize);
+    char *blob = retrieve_object(object_hash, &ucompSize);
 
     printf("%s\n", blob + 10);
 
@@ -126,14 +128,14 @@ int cat_file(int argc, char **argv) {
     return 0;
 }
 
-int ls_tree(int argc, char **argv) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
-        return 1;
-    }
+int ls_tree(char *tree_hash) {
+    // if (argc < 3) {
+    //     fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
+    //     return 1;
+    // }
 
     size_t ucompSize = 4096;
-    char *tree = retrieve_object(argv[2], &ucompSize);
+    char *tree = retrieve_object(tree_hash, &ucompSize);
 
     // Skip the header
     int header_end = 0;
@@ -291,6 +293,44 @@ struct option options[] = {
     {"help", no_argument, &helpflag, 1},
 };
 
+int handle_hash_object_opts(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s hash-object <file>\n", argv[0]);
+        return 1;
+    }
+
+    struct option hash_options[] = {
+        {"write", no_argument, NULL, 'w'},
+        {NULL, 0, NULL, 0},
+    };
+    int hash_option_index = 0;
+
+    int hash_object_write_flag;
+    int c;
+    while ((c = getopt_long(argc, argv, "w", hash_options,
+                            &hash_option_index)) != -1) {
+        if (c == -1)
+            break;
+
+        switch (c) {
+        case 'w':
+            hash_object_write_flag = 1;
+            break;
+        default:
+            break;
+        }
+    }
+
+    return hash_object_write_flag;
+}
+
+void handle_ls_tree_opts(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s ls-tree <hash>\n", argv[0]);
+        exit(1);
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
@@ -305,34 +345,8 @@ int main(int argc, char **argv) {
 
     } else if (strcmp(cmd, "hash-object") == 0) {
 
-        if (argc < 3) {
-            fprintf(stderr, "Usage: %s hash-object <file>\n", argv[0]);
-            return 1;
-        }
-
-        int hash_object_write_flag;
-        struct option hash_options[] = {
-            {"write", no_argument, NULL, 'w'},
-            {NULL, 0, NULL, 0},
-        };
-        int hash_option_index = 0;
-
-        int c;
-        while ((c = getopt_long(argc, argv, "w", hash_options,
-                                &hash_option_index)) != -1) {
-            if (c == -1)
-                break;
-
-            switch (c) {
-            case 'w':
-                hash_object_write_flag = 1;
-                break;
-            default:
-                break;
-            }
-        }
-
-        return hash_object(argv[optind + 1], hash_object_write_flag);
+        int write_flag = handle_hash_object_opts(argc, argv);
+        return hash_object(argv[optind + 1], write_flag);
 
     } else if (strcmp(cmd, "write-tree") == 0) {
 
@@ -348,11 +362,13 @@ int main(int argc, char **argv) {
 
     } else if (strcmp(cmd, "ls-tree") == 0) {
 
-        return ls_tree(argc, argv);
+        handle_ls_tree_opts(argc, argv);
+        return ls_tree(argv[2]);
 
     } else if (strcmp(cmd, "cat-file") == 0) {
 
-        return cat_file(argc, argv);
+        handle_cat_file_opts(argc, argv);
+        return cat_file(argv[2]);
 
     } else if (strcmp(cmd, "commit-tree") == 0) {
 
