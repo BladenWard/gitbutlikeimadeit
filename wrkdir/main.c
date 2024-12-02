@@ -1,3 +1,4 @@
+#include <getopt.h>
 #include <openssl/sha.h>
 #include <regex.h>
 #include <stdio.h>
@@ -285,6 +286,11 @@ int commit_tree(int argc, char **argv) {
     return 0;
 }
 
+static int helpflag;
+struct option options[] = {
+    {"help", no_argument, &helpflag, 1},
+};
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
@@ -292,13 +298,41 @@ int main(int argc, char **argv) {
     }
 
     char *cmd = argv[1];
+
     if (strcmp(cmd, "init") == 0) {
 
         return init();
 
     } else if (strcmp(cmd, "hash-object") == 0) {
 
-        return hash_object(argc, argv);
+        if (argc < 3) {
+            fprintf(stderr, "Usage: %s hash-object <file>\n", argv[0]);
+            return 1;
+        }
+
+        int hash_object_write_flag;
+        struct option hash_options[] = {
+            {"write", no_argument, NULL, 'w'},
+            {NULL, 0, NULL, 0},
+        };
+        int hash_option_index = 0;
+
+        int c;
+        while ((c = getopt_long(argc, argv, "w", hash_options,
+                                &hash_option_index)) != -1) {
+            if (c == -1)
+                break;
+
+            switch (c) {
+            case 'w':
+                hash_object_write_flag = 1;
+                break;
+            default:
+                break;
+            }
+        }
+
+        return hash_object(argv[optind + 1], hash_object_write_flag);
 
     } else if (strcmp(cmd, "write-tree") == 0) {
 

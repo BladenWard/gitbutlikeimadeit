@@ -10,13 +10,13 @@
 #include "blob.h"
 #include "tree.h"
 
-int hash_object(int argc, char **argv) {
+int hash_object(char *file, int write) {
     size_t ucompSize;
-    char *blob = blob_file(argv[argc > 3 ? 3 : 2], &ucompSize);
+    char *blob = blob_file(file, &ucompSize);
 
     char *hash = create_object_hash(blob, ucompSize);
 
-    if (argc > 3 && strcmp(argv[2], "-w") == 0) {
+    if (write) {
         size_t compressed_size;
         char *compressed = compress_object(blob, ucompSize, &compressed_size);
 

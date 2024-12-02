@@ -10,6 +10,6 @@
 #include <unistd.h>
 #include <zlib.h>
 
-int hash_object(int argc, char **argv);
+int hash_object(char *file, int write);
 
 #endif
